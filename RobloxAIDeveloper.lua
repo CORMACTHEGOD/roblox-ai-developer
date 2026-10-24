@@ -1,5 +1,5 @@
 -- Roblox AI Developer
--- v0.2: local, approval-gated actions only. No AI/backend connected.
+-- v0.3: nested read-only inspector and approval-gated local actions. No AI/backend connected.
 -- This plugin never uploads game contents or runs generated scripts.
 
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
@@ -77,11 +77,43 @@ title.Font = Enum.Font.GothamBold
 
 makeLabel(
     "Description",
-    "Preview an exact change, then approve it. AI and online features are not connected yet.",
+    "Inspect actual objects and locations, then preview an exact change for approval. AI is not connected yet.",
     48, 14
 )
 
 local inspectButton = makeButton("InspectGame", "Inspect Game (Read Only)", Color3.fromRGB(74, 79, 95))
+
+-- The inspector has its own scroll area so large trees are still readable.
+local hierarchyFrame = Instance.new("ScrollingFrame")
+hierarchyFrame.Name = "HierarchyResults"
+hierarchyFrame.Size = UDim2.new(1, 0, 0, 220)
+hierarchyFrame.BackgroundColor3 = Color3.fromRGB(37, 40, 49)
+hierarchyFrame.BorderSizePixel = 0
+hierarchyFrame.ScrollBarThickness = 6
+hierarchyFrame.CanvasSize = UDim2.fromOffset(0, 0)
+hierarchyFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+hierarchyFrame.Parent = scroll
+
+local hierarchyPadding = Instance.new("UIPadding")
+hierarchyPadding.PaddingTop = UDim.new(0, 7)
+hierarchyPadding.PaddingBottom = UDim.new(0, 7)
+hierarchyPadding.PaddingLeft = UDim.new(0, 8)
+hierarchyPadding.PaddingRight = UDim.new(0, 12)
+hierarchyPadding.Parent = hierarchyFrame
+
+local hierarchyText = Instance.new("TextLabel")
+hierarchyText.Name = "HierarchyText"
+hierarchyText.Size = UDim2.new(1, 0, 0, 0)
+hierarchyText.AutomaticSize = Enum.AutomaticSize.Y
+hierarchyText.BackgroundTransparency = 1
+hierarchyText.Text = "Click Inspect Game to see objects and scripts inside your open place."
+hierarchyText.TextColor3 = Color3.fromRGB(220, 225, 235)
+hierarchyText.TextSize = 13
+hierarchyText.Font = Enum.Font.Code
+hierarchyText.TextWrapped = true
+hierarchyText.TextXAlignment = Enum.TextXAlignment.Left
+hierarchyText.TextYAlignment = Enum.TextYAlignment.Top
+hierarchyText.Parent = hierarchyFrame
 
 local prompt = Instance.new("TextBox")
 prompt.Name = "Request"
@@ -131,20 +163,107 @@ local function clearProposal(reason)
     status.Text = "Status: No change is awaiting approval."
 end
 
--- Does not read scripts, contact the network, or change the game.
+-- Walk the real Explorer hierarchy. No source code is read or transmitted.
+-- Limits keep inspection responsive even in large places.
+local INSPECT_MAX_OBJECTS = 250
+local INSPECT_MAX_DEPTH = 6
+local INSPECT_SERVICES = {
+    "Workspace", "ReplicatedStorage", "ServerStorage",
+    "ServerScriptService", "StarterGui", "StarterPack"
+}
+
 inspectButton.MouseButton1Click:Connect(function()
-    local lines = {"GAME OVERVIEW (READ ONLY)"}
-    for _, serviceName in ipairs({
-        "Workspace", "ReplicatedStorage", "ServerStorage",
-        "ServerScriptService", "StarterGui", "StarterPack"
-    }) do
-        local parent = game:GetService(serviceName)
+    local lines = {
+        "LIVE GAME HIERARCHY (READ ONLY)",
+        "Open place: " .. game.Name,
+        "Name [ClassName]",
+        ""
+    }
+    local inspected = 0
+    local scriptsFound = 0
+    local truncatedByCount = false
+    local truncatedByDepth = false
+
+    local function getSortedChildren(parent)
         local children = parent:GetChildren()
-        table.insert(lines, serviceName .. ": " .. tostring(#children) .. " direct children")
+        table.sort(children, function(a, b)
+            local left, right = a.Name:lower(), b.Name:lower()
+            if left == right then
+                return a.ClassName < b.ClassName
+            end
+            return left < right
+        end)
+        return children
     end
-    proposal.Text = table.concat(lines, "\n")
+
+    local function visit(instance, depth)
+        if inspected >= INSPECT_MAX_OBJECTS then
+            truncatedByCount = true
+            return
+        end
+
+        inspected = inspected + 1
+        if instance:IsA("LuaSourceContainer") then
+            scriptsFound = scriptsFound + 1
+        end
+
+        table.insert(
+            lines,
+            string.rep("  ", depth) .. "- " .. instance.Name .. " [" .. instance.ClassName .. "]"
+        )
+
+        local children = getSortedChildren(instance)
+        if #children == 0 then
+            return
+        end
+
+        if depth >= INSPECT_MAX_DEPTH then
+            truncatedByDepth = true
+            table.insert(lines, string.rep("  ", depth + 1) .. "... deeper objects hidden")
+            return
+        end
+
+        for _, child in ipairs(children) do
+            if inspected >= INSPECT_MAX_OBJECTS then
+                truncatedByCount = true
+                break
+            end
+            visit(child, depth + 1)
+        end
+    end
+
+    for _, serviceName in ipairs(INSPECT_SERVICES) do
+        local service = game:GetService(serviceName)
+        local children = getSortedChildren(service)
+        table.insert(lines, serviceName .. " (" .. tostring(#children) .. " direct children)")
+
+        for _, child in ipairs(children) do
+            if inspected >= INSPECT_MAX_OBJECTS then
+                truncatedByCount = true
+                break
+            end
+            visit(child, 1)
+        end
+        table.insert(lines, "")
+        if truncatedByCount then
+            break
+        end
+    end
+
+    table.insert(lines, "Objects listed: " .. tostring(inspected))
+    table.insert(lines, "Script objects listed: " .. tostring(scriptsFound))
+    if truncatedByCount then
+        table.insert(lines, "Limited to 250 objects. The game may contain more.")
+    end
+    if truncatedByDepth then
+        table.insert(lines, "Some objects deeper than 6 levels were hidden.")
+    end
+    table.insert(lines, "Names and classes only. Script contents were NOT read.")
+
+    hierarchyText.Text = table.concat(lines, "\n")
+    hierarchyFrame.CanvasPosition = Vector2.new(0, 0)
     pending = nil
-    status.Text = "Status: Read-only inspection completed. No changes made."
+    status.Text = "Status: Read-only inspection finished. Nothing changed."
 end)
 
 prepareButton.MouseButton1Click:Connect(function()
@@ -261,4 +380,4 @@ openButton.Click:Connect(function()
     widget.Enabled = not widget.Enabled
 end)
 
-print("Roblox AI Developer v0.2 loaded (local actions only).")
+print("Roblox AI Developer v0.3 loaded (nested inspector; local actions only).")
