@@ -8,7 +8,8 @@ local toolbar = plugin:CreateToolbar("Roblox AI Developer")
 local openButton = toolbar:CreateButton(
     "OpenAI",
     "Open Roblox AI Developer",
-    ""
+    "rbxassetid://14978048121",
+    "OpenAI"
 )
 openButton.ClickableWhenViewportHidden = true
 
