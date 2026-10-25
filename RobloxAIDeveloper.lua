@@ -1,5 +1,5 @@
 -- Roblox AI Developer
--- v0.3: nested read-only inspector and approval-gated local actions. No AI/backend connected.
+-- v0.4: nested inspector, approval-gated local actions, model preference UI. No AI/backend connected.
 -- This plugin never uploads game contents or runs generated scripts.
 
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
@@ -81,6 +81,53 @@ makeLabel(
     "Inspect actual objects and locations, then preview an exact change for approval. AI is not connected yet.",
     48, 14
 )
+
+-- Model choices are local UI preferences only. Actual provider calls require
+-- a separate authenticated backend. Never store API keys in this plugin.
+local modelOptions = {
+    { id = "gemini-3.8-flash", provider = "Google", name = "Gemini 3.8 Flash", tier = "Free tier if eligible" },
+    { id = "gpt-6-luna", provider = "OpenAI", name = "GPT-6 Luna", tier = "Budget paid" },
+    { id = "gpt-6.1-sol", provider = "OpenAI", name = "GPT-6.1 Sol", tier = "Balanced paid" },
+    { id = "gpt-6-astra", provider = "OpenAI", name = "GPT-6 Astra", tier = "Advanced paid" }
+}
+
+local modelIndex = 1
+local okSaved, savedModelId = pcall(function()
+    return plugin:GetSetting("PreferredModelId")
+end)
+if okSaved and type(savedModelId) == "string" then
+    for index, option in ipairs(modelOptions) do
+        if option.id == savedModelId then
+            modelIndex = index
+            break
+        end
+    end
+end
+
+local modelTitle = makeLabel("ModelTitle", "AI model preference", 23, 15)
+modelTitle.Font = Enum.Font.GothamBold
+local modelButton = makeButton("ModelSelector", "", Color3.fromRGB(77, 75, 112))
+local modelInfo = makeLabel(
+    "ModelInfo",
+    "Selection only. No AI backend is connected; choosing a model does not send requests.",
+    52, 12
+)
+
+local function refreshModelDisplay()
+    local option = modelOptions[modelIndex]
+    modelButton.Text = option.name .. "  (click to change)"
+    modelInfo.Text = option.provider .. " | " .. option.tier ..
+        "\nNot connected yet. No API keys or game data are sent."
+end
+
+modelButton.MouseButton1Click:Connect(function()
+    modelIndex = (modelIndex % #modelOptions) + 1
+    refreshModelDisplay()
+    pcall(function()
+        plugin:SetSetting("PreferredModelId", modelOptions[modelIndex].id)
+    end)
+end)
+refreshModelDisplay()
 
 local inspectButton = makeButton("InspectGame", "Inspect Game (Read Only)", Color3.fromRGB(74, 79, 95))
 
@@ -381,4 +428,4 @@ openButton.Click:Connect(function()
     widget.Enabled = not widget.Enabled
 end)
 
-print("Roblox AI Developer v0.3 loaded (nested inspector; local actions only).")
+print("Roblox AI Developer v0.4 loaded (model preference; nested inspector; local actions only).")
