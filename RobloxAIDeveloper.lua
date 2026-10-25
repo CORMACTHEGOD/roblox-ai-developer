@@ -1,8 +1,9 @@
 -- Roblox AI Developer
--- v0.4: nested inspector, approval-gated local actions, model preference UI. No AI/backend connected.
+-- v0.5: opt-in AI suggestion bridge, nested inspector, and approval-gated local actions.
 -- This plugin never uploads game contents or runs generated scripts.
 
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local HttpService = game:GetService("HttpService")
 
 local toolbar = plugin:CreateToolbar("Roblox AI Developer")
 local openButton = toolbar:CreateButton(
@@ -85,7 +86,6 @@ makeLabel(
 -- Model choices are local UI preferences only. Actual provider calls require
 -- a separate authenticated backend. Never store API keys in this plugin.
 local modelOptions = {
-    { id = "gemini-3.8-flash", provider = "Google", name = "Gemini 3.8 Flash", tier = "Free tier if eligible" },
     { id = "gpt-6-luna", provider = "OpenAI", name = "GPT-6 Luna", tier = "Budget paid" },
     { id = "gpt-6.1-sol", provider = "OpenAI", name = "GPT-6.1 Sol", tier = "Balanced paid" },
     { id = "gpt-6-astra", provider = "OpenAI", name = "GPT-6 Astra", tier = "Advanced paid" }
@@ -109,7 +109,7 @@ modelTitle.Font = Enum.Font.GothamBold
 local modelButton = makeButton("ModelSelector", "", Color3.fromRGB(77, 75, 112))
 local modelInfo = makeLabel(
     "ModelInfo",
-    "Selection only. No AI backend is connected; choosing a model does not send requests.",
+    "Your model choice is saved locally. Set up your private AI backend to make real requests.",
     52, 12
 )
 
@@ -117,7 +117,7 @@ local function refreshModelDisplay()
     local option = modelOptions[modelIndex]
     modelButton.Text = option.name .. "  (click to change)"
     modelInfo.Text = option.provider .. " | " .. option.tier ..
-        "\nNot connected yet. No API keys or game data are sent."
+        "\nRequests require your own configured private backend."
 end
 
 modelButton.MouseButton1Click:Connect(function()
@@ -128,6 +128,99 @@ modelButton.MouseButton1Click:Connect(function()
     end)
 end)
 refreshModelDisplay()
+
+
+-- The AI bridge is a private-beta feature, not a publicly authenticated service.
+-- Only the operator's own backend URL may be entered here. No shared secrets
+-- or OpenAI API keys are embedded in the plugin or stored in Plugin Settings.
+local aiTitle = makeLabel("AiBridgeTitle", "AI Bridge (Private Beta)", 23, 15)
+aiTitle.Font = Enum.Font.GothamBold
+makeLabel("AiNotice", "Ask AI for suggestions. No AI answers are applied automatically. Only send game object names if you opt in.", 48, 13)
+
+local function makeInput(name, placeholder, height)
+    local field = Instance.new("TextBox")
+    field.Name = name
+    field.Size = UDim2.new(1, 0, 0, height)
+    field.BackgroundColor3 = Color3.fromRGB(45, 48, 60)
+    field.BorderSizePixel = 0
+    field.TextColor3 = Color3.new(1, 1, 1)
+    field.PlaceholderText = placeholder
+    field.Text = ""
+    field.TextSize = 13
+    field.Font = Enum.Font.Code
+    field.ClearTextOnFocus = false
+    field.TextXAlignment = Enum.TextXAlignment.Left
+    field.Parent = scroll
+    return field
+end
+
+local backendUrlInput = makeInput("BackendURL", "https://YOUR-WORKER.workers.dev", 36)
+local okUrl, savedUrl = pcall(function()
+    return plugin:GetSetting("AiBackendUrl")
+end)
+if okUrl and type(savedUrl) == "string" then
+    backendUrlInput.Text = savedUrl
+end
+backendUrlInput.FocusLost:Connect(function()
+    local url = backendUrlInput.Text:match("^%s*(.-)%s*$")
+    if url:match("^https://[%w%.%-]+/?$") then
+        backendUrlInput.Text = url
+        pcall(function()
+            plugin:SetSetting("AiBackendUrl", url)
+        end)
+    end
+end)
+
+local sessionToken = nil
+local tokenInput = makeInput("SessionToken", "Paste private test token, then press Enter", 36)
+tokenInput.FocusLost:Connect(function()
+    local typed = tokenInput.Text:match("^%s*(.-)%s*$")
+    if typed ~= "" then
+        sessionToken = typed
+        tokenInput.PlaceholderText = "Private token loaded for this Studio session"
+    end
+    -- Remove token from visible TextBox. Do not persist it to plugin settings.
+    tokenInput.Text = ""
+end)
+
+local shareOutline = false
+local outlineToggle = makeButton("OutlineToggle", "Share Game Outline: OFF", Color3.fromRGB(77, 75, 112))
+outlineToggle.MouseButton1Click:Connect(function()
+    shareOutline = not shareOutline
+    outlineToggle.Text = shareOutline and "Share Game Outline: ON" or "Share Game Outline: OFF"
+end)
+
+local askAIButton = makeButton("AskAI", "Ask AI (Suggestion Only)", Color3.fromRGB(65, 105, 210))
+local aiResultFrame = Instance.new("ScrollingFrame")
+aiResultFrame.Name = "AIResults"
+aiResultFrame.Size = UDim2.new(1, 0, 0, 185)
+aiResultFrame.BackgroundColor3 = Color3.fromRGB(37, 40, 49)
+aiResultFrame.BorderSizePixel = 0
+aiResultFrame.ScrollBarThickness = 6
+aiResultFrame.CanvasSize = UDim2.fromOffset(0, 0)
+aiResultFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+aiResultFrame.Parent = scroll
+
+local aiResultPadding = Instance.new("UIPadding")
+aiResultPadding.PaddingLeft = UDim.new(0, 8)
+aiResultPadding.PaddingRight = UDim.new(0, 12)
+aiResultPadding.PaddingTop = UDim.new(0, 8)
+aiResultPadding.PaddingBottom = UDim.new(0, 8)
+aiResultPadding.Parent = aiResultFrame
+
+local aiResultText = Instance.new("TextLabel")
+aiResultText.Name = "AIText"
+aiResultText.Size = UDim2.new(1, 0, 0, 0)
+aiResultText.AutomaticSize = Enum.AutomaticSize.Y
+aiResultText.BackgroundTransparency = 1
+aiResultText.TextColor3 = Color3.fromRGB(220, 225, 235)
+aiResultText.Font = Enum.Font.Code
+aiResultText.TextSize = 13
+aiResultText.TextWrapped = true
+aiResultText.TextXAlignment = Enum.TextXAlignment.Left
+aiResultText.TextYAlignment = Enum.TextYAlignment.Top
+aiResultText.Text = "AI suggestions appear here. Nothing in this panel changes your game."
+aiResultText.Parent = aiResultFrame
 
 local inspectButton = makeButton("InspectGame", "Inspect Game (Read Only)", Color3.fromRGB(74, 79, 95))
 
@@ -424,8 +517,129 @@ approveButton.MouseButton1Click:Connect(function()
     end
 end)
 
+
+-- Send only what the user chose: prompt by default, optionally a short outline.
+-- Never read Script.Source or execute AI output.
+local function buildGameOutline()
+    local lines = {}
+    local listed = 0
+    local services = {
+        "Workspace", "ReplicatedStorage", "ServerStorage",
+        "ServerScriptService", "StarterGui", "StarterPack"
+    }
+    local function walk(instance, level)
+        if listed >= 80 or level > 3 then
+            return
+        end
+        listed = listed + 1
+        local safeName = instance.Name:gsub("[%c]", " "):sub(1, 75)
+        table.insert(lines, string.rep("  ", level) .. safeName .. " [" .. instance.ClassName .. "]")
+        if level >= 3 then
+            return
+        end
+        local children = instance:GetChildren()
+        table.sort(children, function(a, b)
+            return a.Name:lower() < b.Name:lower()
+        end)
+        for _, child in ipairs(children) do
+            if listed >= 80 then
+                break
+            end
+            walk(child, level + 1)
+        end
+    end
+    for _, serviceName in ipairs(services) do
+        if listed >= 80 then
+            break
+        end
+        table.insert(lines, serviceName .. ":")
+        local service = game:GetService(serviceName)
+        local children = service:GetChildren()
+        table.sort(children, function(a, b)
+            return a.Name:lower() < b.Name:lower()
+        end)
+        for _, child in ipairs(children) do
+            if listed >= 80 then
+                break
+            end
+            walk(child, 1)
+        end
+    end
+    return table.concat(lines, "\n"):sub(1, 6000)
+end
+
+local aiRequestIndex = 0
+askAIButton.MouseButton1Click:Connect(function()
+    local request = trim(prompt.Text)
+    if request == "" or #request > 3000 then
+        aiResultText.Text = "Enter a request of 1-3000 characters in the description box."
+        return
+    end
+    local url = trim(backendUrlInput.Text):gsub("/+$", "")
+    if not url:match("^https://[%w%.%-]+$") then
+        aiResultText.Text = "Enter your own HTTPS backend URL first."
+        return
+    end
+    if not sessionToken or sessionToken == "" then
+        aiResultText.Text = "Enter the private test token, then press Enter to load it for this session."
+        return
+    end
+    pending = nil -- AI suggestions do not become executable proposals.
+    aiRequestIndex = aiRequestIndex + 1
+    local currentIndex = aiRequestIndex
+    aiResultText.Text = "Contacting your configured AI backend..."
+    status.Text = "Status: Waiting for AI suggestion. No game changes made."
+
+    local body = {
+        prompt = request,
+        model = modelOptions[modelIndex].id
+    }
+    if shareOutline then
+        body.gameOutline = buildGameOutline()
+    end
+
+    task.spawn(function()
+        local success, response = pcall(function()
+            return HttpService:RequestAsync({
+                Url = url .. "/v1/plan",
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. sessionToken
+                },
+                Body = HttpService:JSONEncode(body)
+            })
+        end)
+        if aiRequestIndex ~= currentIndex then
+            return
+        end
+        if not success then
+            aiResultText.Text = "Network request failed. Check backend URL, plugin HTTP permission, and Output for errors."
+            status.Text = "Status: AI request failed. Nothing changed."
+            return
+        end
+        local parsedOK, data = pcall(function()
+            return HttpService:JSONDecode(response.Body)
+        end)
+        if not response.Success then
+            local reason = parsedOK and type(data) == "table" and data.error
+            aiResultText.Text = "AI error: " .. tostring(reason or response.StatusCode)
+            status.Text = "Status: AI request failed. Nothing changed."
+            return
+        end
+        if not parsedOK or type(data) ~= "table" or type(data.suggestion) ~= "string" then
+            aiResultText.Text = "The AI backend returned an unexpected response."
+            status.Text = "Status: AI response invalid. Nothing changed."
+            return
+        end
+        aiResultText.Text = "AI SUGGESTION (NOT APPLIED)\n\n" .. data.suggestion:sub(1, 7000)
+        aiResultFrame.CanvasPosition = Vector2.new(0, 0)
+        status.Text = "Status: AI suggestion received. No changes made."
+    end)
+end)
+
 openButton.Click:Connect(function()
     widget.Enabled = not widget.Enabled
 end)
 
-print("Roblox AI Developer v0.4 loaded (model preference; nested inspector; local actions only).")
+print("Roblox AI Developer v0.5 loaded (private-beta AI suggestion bridge; local approvals).")
