@@ -194,3 +194,30 @@ test('unified Prepare rejects duplicate paths, unsupported classes and unsafe fo
     assert.equal(r.status, 502);
   }
 });
+
+test('unified Prepare supports combined client/server UI and remote dependency steps', async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+  const combo = {
+    summary: 'Create a shop GUI, communication remote, and server handler',
+    steps: [
+      {path: 'ReplicatedStorage/BuyItem', className: 'RemoteEvent', properties: [], source: ''},
+      {path: 'StarterGui/ShopGui', className: 'ScreenGui', properties: [], source: ''},
+      {path: 'StarterGui/ShopGui/BuyButton', className: 'TextButton',
+        properties: [{name:'Text', value:'Buy'}], source:''},
+      {path: 'StarterGui/ShopGui/BuyButton/BuyClient', className: 'LocalScript',
+        properties: [], source:'game.ReplicatedStorage:WaitForChild("BuyItem"):FireServer()'},
+      {path: 'ServerScriptService/ShopHandler', className: 'Script',
+        properties: [], source:'game.ReplicatedStorage:WaitForChild("BuyItem").OnServerEvent:Connect(function(player) print(player.Name) end)'}
+    ]
+  };
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(combo)}]}]
+  }), {status:200});
+  const r=await worker.fetch(preparedRequest({
+    prompt:'Create a shop button with working server event',
+    model:'gpt-6-luna', gameOutline:'StarterGui: empty; ReplicatedStorage: empty'
+  }),env);
+  assert.equal(r.status, 200);
+  assert.deepEqual((await r.json()).plan.steps, combo.steps);
+});
