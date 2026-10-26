@@ -32,7 +32,7 @@ At most 24 steps. For an existing object, propose its existing path with the sam
 Scripts must have source. Prefer Script in ServerScriptService or inside a Workspace model/part, LocalScript inside StarterGui's GUI tree or StarterPlayer/StarterPlayerScripts. Never assume LocalScript runs when parented directly to Workspace.
 Avoid referencing objects or remotes that aren't in the existing outline OR created by the steps. If a needed RemoteEvent is unavailable, don't invent references to it; instead use self-contained server and local behavior within supported classes.
 For scripts, put executable Luau only in source, with no introductory/tutorial/approval comments. Source MUST be empty for non-script objects.
-All property values are STRINGS. RGB colors are "r,g,b" in 0-255 integers. Vector3 is "x,y,z". UDim2 is "scaleX,offsetX,scaleY,offsetY". Vector2 is "x,y". Use true/false for booleans and standard names for materials and fonts.
+All property values are STRINGS. UDim is "scale,offset". RGB colors are "r,g,b" in 0-255 integers. Vector3 is "x,y,z". UDim2 is "scaleX,offsetX,scaleY,offsetY". Vector2 is "x,y". Use true/false for booleans and standard names for materials and fonts.
 Valid properties: Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape for parts; Size, Position, AnchorPoint, BackgroundColor3, BackgroundTransparency, Text, TextColor3, TextSize, TextWrapped, Visible, ZIndex, Font for GuiObjects; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness and Color for UIStroke; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt. Only use properties actually supported by the chosen ClassName.
 No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting scripts, no unsafe code, no external HTTP/asset loading or external code execution.
 Provide a concise summary of the WHOLE change, not an essay. Approval happens separately in Studio, and inserted scripts start disabled.
@@ -239,7 +239,8 @@ export default {
         }
         const tokens = step.path.split("/");
         if (tokens.length < 2 || tokens.length > 9 || !SAFE_ROOTS.has(tokens[0]) ||
-            tokens.some(t => !/^[A-Za-z][A-Za-z0-9_ -]{0,49}$/.test(t)) ||
+            tokens.some(t => t.length < 1 || t.length > 70 || t === "." || t === ".." ||
+              /[\\/\r\n\0]/.test(t) || !t.trim()) ||
             seen.has(step.path)) {
           return reply({ error: "AI proposed an invalid or duplicate path" }, 502);
         }
