@@ -177,7 +177,7 @@ test('unified Prepare rejects duplicate paths, unsupported classes and unsafe fo
   t.after(() => { globalThis.fetch = previousFetch; });
   const invalid = [
     { ...doorPlan, steps: [doorPlan.steps[0], doorPlan.steps[0]] },
-    { ...doorPlan, steps: [{ ...doorPlan.steps[0], className: 'RemoteEvent' }] },
+    { ...doorPlan, steps: [{ ...doorPlan.steps[0], className: 'DataStoreService' }] },
     { ...doorPlan, steps: [{ ...doorPlan.steps[0], path: 'Players/Hacked' }] },
     { ...doorPlan, steps: [{ ...doorPlan.steps[0], source: 'print("invalid")' }] },
     { ...doorPlan, steps: Array.from({ length: 25 }, (_, i) => ({
