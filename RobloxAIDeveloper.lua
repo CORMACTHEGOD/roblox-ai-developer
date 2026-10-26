@@ -1,889 +1,761 @@
--- Roblox AI Developer
--- v0.6: adds AI script proposals, complete preview, explicit approval and Undo.
--- Generated Script instances are created DISABLED; the plugin never runs their code.
+-- Orange Juice AI v0.7: one request, Prepare, review, Apply.
+-- Safe allowlisted multi-object proposals. No automatic Studio modifications.
+-- Private beta: do NOT distribute the shared CLIENT_TOKEN to other users.
 
-local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local HttpService = game:GetService("HttpService")
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
 
-local toolbar = plugin:CreateToolbar("Roblox AI Developer")
+local toolbar = plugin:CreateToolbar("Orange Juice AI")
 local openButton = toolbar:CreateButton(
-    "OpenAI",
-    "Open Roblox AI Developer",
-    "rbxassetid://14978048121",
-    "OpenAI"
+    "OrangeJuiceAI", "Open Orange Juice AI", "rbxassetid://14978048121", "Orange AI"
 )
 openButton.ClickableWhenViewportHidden = true
-
-local widgetInfo = DockWidgetPluginGuiInfo.new(
-    Enum.InitialDockState.Right, false, false, 420, 600, 320, 400
+local info = DockWidgetPluginGuiInfo.new(
+    Enum.InitialDockState.Right, false, false, 450, 675, 320, 450
 )
-local widget = plugin:CreateDockWidgetPluginGui("RobloxAIDeveloperWidget", widgetInfo)
-widget.Title = "Roblox AI Developer"
+local widget = plugin:CreateDockWidgetPluginGui("RobloxAIDeveloperWidget", info)
+widget.Title = "Orange Juice AI"
 
-local scroll = Instance.new("ScrollingFrame")
-scroll.Name = "Content"
-scroll.Size = UDim2.fromScale(1, 1)
-scroll.BackgroundColor3 = Color3.fromRGB(30, 32, 40)
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 6
-scroll.CanvasSize = UDim2.fromOffset(0, 0)
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.Parent = widget
+local bg = Color3.fromRGB(28, 31, 39)
+local panel = Color3.fromRGB(42, 46, 56)
+local fg = Color3.fromRGB(236, 239, 245)
+local blue = Color3.fromRGB(68, 106, 219)
+local green = Color3.fromRGB(44, 146, 93)
 
-local padding = Instance.new("UIPadding")
-padding.PaddingTop = UDim.new(0, 12)
-padding.PaddingBottom = UDim.new(0, 12)
-padding.PaddingLeft = UDim.new(0, 10)
-padding.PaddingRight = UDim.new(0, 16)
-padding.Parent = scroll
+local root = Instance.new("ScrollingFrame")
+root.Name = "Main"
+root.Size = UDim2.fromScale(1, 1)
+root.BackgroundColor3 = bg
+root.BorderSizePixel = 0
+root.ScrollBarThickness = 6
+root.AutomaticCanvasSize = Enum.AutomaticSize.Y
+root.CanvasSize = UDim2.fromOffset(0, 0)
+root.Parent = widget
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0, 12)
+pad.PaddingBottom = UDim.new(0, 15)
+pad.PaddingLeft = UDim.new(0, 12)
+pad.PaddingRight = UDim.new(0, 16)
+pad.Parent = root
+local stack = Instance.new("UIListLayout")
+stack.SortOrder = Enum.SortOrder.LayoutOrder
+stack.Padding = UDim.new(0, 9)
+stack.Parent = root
 
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 10)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = scroll
-
-local function makeLabel(name, text, height, fontSize, background)
-    local element = Instance.new("TextLabel")
-    element.Name = name
-    element.Size = UDim2.new(1, 0, 0, height)
-    element.BackgroundColor3 = background or Color3.fromRGB(30, 32, 40)
-    element.BackgroundTransparency = background and 0 or 1
-    element.BorderSizePixel = 0
-    element.Text = text
-    element.TextColor3 = Color3.fromRGB(225, 229, 239)
-    element.TextSize = fontSize
-    element.Font = Enum.Font.Gotham
-    element.TextWrapped = true
-    element.TextXAlignment = Enum.TextXAlignment.Left
-    element.TextYAlignment = Enum.TextYAlignment.Top
-    element.Parent = scroll
-    return element
+local function label(parent, name, content, height, size)
+    local l = Instance.new("TextLabel")
+    l.Name = name
+    l.Size = UDim2.new(1, 0, 0, height)
+    l.BackgroundTransparency = 1
+    l.TextColor3 = fg
+    l.Text = content
+    l.Font = Enum.Font.Gotham
+    l.TextSize = size or 13
+    l.TextWrapped = true
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.TextYAlignment = Enum.TextYAlignment.Top
+    l.Parent = parent
+    return l
 end
 
-local function makeButton(name, text, color)
-    local button = Instance.new("TextButton")
-    button.Name = name
-    button.Size = UDim2.new(1, 0, 0, 42)
-    button.BackgroundColor3 = color
-    button.BorderSizePixel = 0
-    button.Text = text
-    button.TextColor3 = Color3.new(1, 1, 1)
-    button.TextSize = 15
-    button.Font = Enum.Font.GothamBold
-    button.Parent = scroll
-    return button
+local function button(parent, name, content, color, height)
+    local b = Instance.new("TextButton")
+    b.Name = name
+    b.Size = UDim2.new(1, 0, 0, height or 40)
+    b.Text = content
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.BackgroundColor3 = color
+    b.BorderSizePixel = 0
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 14
+    b.Parent = parent
+    return b
 end
 
-local title = makeLabel("Title", "Roblox AI Developer", 35, 22)
-title.Font = Enum.Font.GothamBold
+local function input(parent, name, placeholder, height, multiline)
+    local t = Instance.new("TextBox")
+    t.Name = name
+    t.Size = UDim2.new(1, 0, 0, height)
+    t.BackgroundColor3 = panel
+    t.TextColor3 = fg
+    t.PlaceholderColor3 = Color3.fromRGB(159, 168, 181)
+    t.PlaceholderText = placeholder
+    t.Text = ""
+    t.TextSize = 13
+    t.Font = Enum.Font.Code
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.TextYAlignment = Enum.TextYAlignment.Top
+    t.TextWrapped = multiline or false
+    t.MultiLine = multiline or false
+    t.ClearTextOnFocus = false
+    t.BorderSizePixel = 0
+    t.Parent = parent
+    return t
+end
 
-makeLabel(
-    "Description",
-    "Inspect the game, ask AI for suggestions, or review a generated script before creating it disabled.",
-    48, 14
+local header = label(root, "Heading", "Orange Juice AI", 35, 23)
+header.Font = Enum.Font.GothamBold
+label(root, "Hint", "Describe what you want. Prepare checks your game and plans everything needed. Apply only after review.", 55, 13)
+
+local request = input(root, "Request", "Example: Make a working door with a model and a touch script", 124, true)
+local actionRow = Instance.new("Frame")
+actionRow.Name = "Actions"
+actionRow.BackgroundTransparency = 1
+actionRow.Size = UDim2.new(1, 0, 0, 42)
+actionRow.Parent = root
+local actionLayout = Instance.new("UIListLayout")
+actionLayout.FillDirection = Enum.FillDirection.Horizontal
+actionLayout.Padding = UDim.new(0, 8)
+actionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+actionLayout.Parent = actionRow
+local prepareButton = button(actionRow, "Prepare", "Prepare", blue, 42)
+prepareButton.Size = UDim2.new(0.5, -4, 0, 42)
+local applyButton = button(actionRow, "Apply", "Apply", Color3.fromRGB(78, 84, 96), 42)
+applyButton.Size = UDim2.new(0.5, -4, 0, 42)
+
+local status = label(root, "Status", "Ready. Configure connection and game-context consent below.", 52, 13)
+local previewTitle = label(root, "PreviewHeading", "Proposal preview — no changes yet", 25, 15)
+previewTitle.Font = Enum.Font.GothamBold
+local previewFrame = Instance.new("ScrollingFrame")
+previewFrame.Name = "FullProposalPreview"
+previewFrame.Size = UDim2.new(1, 0, 0, 310)
+previewFrame.BackgroundColor3 = panel
+previewFrame.BorderSizePixel = 0
+previewFrame.ScrollBarThickness = 7
+previewFrame.CanvasSize = UDim2.fromOffset(0, 0)
+previewFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+previewFrame.Parent = root
+local previewPad = Instance.new("UIPadding")
+previewPad.PaddingLeft = UDim.new(0, 9)
+previewPad.PaddingRight = UDim.new(0, 14)
+previewPad.PaddingTop = UDim.new(0, 9)
+previewPad.PaddingBottom = UDim.new(0, 9)
+previewPad.Parent = previewFrame
+local previewText = Instance.new("TextLabel")
+previewText.Name = "ProposalText"
+previewText.Size = UDim2.new(1, 0, 0, 0)
+previewText.AutomaticSize = Enum.AutomaticSize.Y
+previewText.BackgroundTransparency = 1
+previewText.TextColor3 = fg
+previewText.Text = "Prepared object changes and full script source will appear here."
+previewText.Font = Enum.Font.Code
+previewText.TextSize = 13
+previewText.TextWrapped = true
+previewText.TextXAlignment = Enum.TextXAlignment.Left
+previewText.TextYAlignment = Enum.TextYAlignment.Top
+previewText.Parent = previewFrame
+
+local setupButton = button(root, "SettingsToggle", "Connection & privacy settings", Color3.fromRGB(58, 65, 78), 32)
+setupButton.TextSize = 12
+local setupFrame = Instance.new("Frame")
+setupFrame.Name = "Settings"
+setupFrame.BackgroundTransparency = 1
+setupFrame.Size = UDim2.new(1, 0, 0, 160)
+setupFrame.AutomaticSize = Enum.AutomaticSize.Y
+setupFrame.Parent = root
+local settingsLayout = Instance.new("UIListLayout")
+settingsLayout.Padding = UDim.new(0, 7)
+settingsLayout.Parent = setupFrame
+local urlInput = input(setupFrame, "WorkerURL", "https://YOUR-WORKER.workers.dev", 33, false)
+local tokenInput = input(setupFrame, "SessionToken", "Paste CLIENT_TOKEN, then press Enter", 33, false)
+local contextButton = button(
+    setupFrame, "ContextPermission", "Share game structure with AI: OFF", Color3.fromRGB(105, 69, 69), 34
 )
-
--- Model choices are local UI preferences only. Actual provider calls require
--- a separate authenticated backend. Never store API keys in this plugin.
-local modelOptions = {
-    { id = "gpt-6-luna", provider = "OpenAI", name = "GPT-6 Luna", tier = "Budget paid" },
-    { id = "gpt-6.1-sol", provider = "OpenAI", name = "GPT-6.1 Sol", tier = "Balanced paid" },
-    { id = "gpt-6-astra", provider = "OpenAI", name = "GPT-6 Astra", tier = "Advanced paid" }
-}
-
-local modelIndex = 1
-local okSaved, savedModelId = pcall(function()
+contextButton.TextSize = 12
+label(setupFrame, "Privacy", "Opt-in shares up to 220 object paths/classes and selected properties when you press Prepare. Never sends script Source.", 62, 12)
+local settingsOpen = false
+local consent = false
+local token = nil
+local preferredModel = "gpt-6-luna"
+local okModel, savedModel = pcall(function()
     return plugin:GetSetting("PreferredModelId")
 end)
-if okSaved and type(savedModelId) == "string" then
-    for index, option in ipairs(modelOptions) do
-        if option.id == savedModelId then
-            modelIndex = index
-            break
-        end
-    end
+local modelWhitelist = { ["gpt-6-luna"] = true, ["gpt-6.1-sol"] = true, ["gpt-6-astra"] = true }
+if okModel and modelWhitelist[savedModel] then
+    preferredModel = savedModel
 end
-
-local modelTitle = makeLabel("ModelTitle", "AI model preference", 23, 15)
-modelTitle.Font = Enum.Font.GothamBold
-local modelButton = makeButton("ModelSelector", "", Color3.fromRGB(77, 75, 112))
-local modelInfo = makeLabel(
-    "ModelInfo",
-    "Your model choice is saved locally. Set up your private AI backend to make real requests.",
-    52, 12
-)
-
-local function refreshModelDisplay()
-    local option = modelOptions[modelIndex]
-    modelButton.Text = option.name .. "  (click to change)"
-    modelInfo.Text = option.provider .. " | " .. option.tier ..
-        "\nRequests require your own configured private backend."
-end
-
-modelButton.MouseButton1Click:Connect(function()
-    modelIndex = (modelIndex % #modelOptions) + 1
-    refreshModelDisplay()
-    pcall(function()
-        plugin:SetSetting("PreferredModelId", modelOptions[modelIndex].id)
-    end)
-end)
-refreshModelDisplay()
-
-
--- The AI bridge is a private-beta feature, not a publicly authenticated service.
--- Only the operator's own backend URL may be entered here. No shared secrets
--- or OpenAI API keys are embedded in the plugin or stored in Plugin Settings.
-local aiTitle = makeLabel("AiBridgeTitle", "AI Bridge (Private Beta)", 23, 15)
-aiTitle.Font = Enum.Font.GothamBold
-makeLabel("AiNotice", "Ask AI for suggestions or request a Script proposal. Script proposals require review and approval. Share object names only if you opt in.", 55, 13)
-
-local function makeInput(name, placeholder, height)
-    local field = Instance.new("TextBox")
-    field.Name = name
-    field.Size = UDim2.new(1, 0, 0, height)
-    field.BackgroundColor3 = Color3.fromRGB(45, 48, 60)
-    field.BorderSizePixel = 0
-    field.TextColor3 = Color3.new(1, 1, 1)
-    field.PlaceholderText = placeholder
-    field.Text = ""
-    field.TextSize = 13
-    field.Font = Enum.Font.Code
-    field.ClearTextOnFocus = false
-    field.TextXAlignment = Enum.TextXAlignment.Left
-    field.Parent = scroll
-    return field
-end
-
-local backendUrlInput = makeInput("BackendURL", "https://YOUR-WORKER.workers.dev", 36)
-local okUrl, savedUrl = pcall(function()
+local okURL, savedURL = pcall(function()
     return plugin:GetSetting("AiBackendUrl")
 end)
-if okUrl and type(savedUrl) == "string" then
-    backendUrlInput.Text = savedUrl
+if okURL and type(savedURL) == "string" then
+    urlInput.Text = savedURL
 end
-backendUrlInput.FocusLost:Connect(function()
-    local url = backendUrlInput.Text:match("^%s*(.-)%s*$")
-    if url:match("^https://[%w%.%-]+/?$") then
-        backendUrlInput.Text = url
-        pcall(function()
-            plugin:SetSetting("AiBackendUrl", url)
-        end)
-    end
+local okConsent, savedConsent = pcall(function()
+    return plugin:GetSetting("OrangeJuiceGameContextConsent")
+end)
+if okConsent and savedConsent == true then
+    consent = true
+end
+
+local function refreshSettings()
+    setupFrame.Visible = settingsOpen
+    contextButton.Text = "Share game structure with AI: " .. (consent and "ON" or "OFF")
+    contextButton.BackgroundColor3 = consent and green or Color3.fromRGB(105, 69, 69)
+end
+
+settingsOpen = not consent or not okURL or not savedURL or savedURL == ""
+refreshSettings()
+setupButton.MouseButton1Click:Connect(function()
+    settingsOpen = not settingsOpen
+    refreshSettings()
 end)
 
-local sessionToken = nil
-local tokenInput = makeInput("SessionToken", "Paste private test token, then press Enter", 36)
-tokenInput.FocusLost:Connect(function()
-    local typed = tokenInput.Text:match("^%s*(.-)%s*$")
-    if typed ~= "" then
-        sessionToken = typed
-        tokenInput.PlaceholderText = "Private token loaded for this Studio session"
-    end
-    -- Remove token from visible TextBox. Do not persist it to plugin settings.
-    tokenInput.Text = ""
-end)
-
-local shareOutline = false
-local outlineToggle = makeButton("OutlineToggle", "Share Game Outline: OFF", Color3.fromRGB(77, 75, 112))
-outlineToggle.MouseButton1Click:Connect(function()
-    shareOutline = not shareOutline
-    outlineToggle.Text = shareOutline and "Share Game Outline: ON" or "Share Game Outline: OFF"
-end)
-
-local askAIButton = makeButton("AskAI", "Ask AI (Suggestion Only)", Color3.fromRGB(65, 105, 210))
-local aiResultFrame = Instance.new("ScrollingFrame")
-aiResultFrame.Name = "AIResults"
-aiResultFrame.Size = UDim2.new(1, 0, 0, 185)
-aiResultFrame.BackgroundColor3 = Color3.fromRGB(37, 40, 49)
-aiResultFrame.BorderSizePixel = 0
-aiResultFrame.ScrollBarThickness = 6
-aiResultFrame.CanvasSize = UDim2.fromOffset(0, 0)
-aiResultFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-aiResultFrame.Parent = scroll
-
-local aiResultPadding = Instance.new("UIPadding")
-aiResultPadding.PaddingLeft = UDim.new(0, 8)
-aiResultPadding.PaddingRight = UDim.new(0, 12)
-aiResultPadding.PaddingTop = UDim.new(0, 8)
-aiResultPadding.PaddingBottom = UDim.new(0, 8)
-aiResultPadding.Parent = aiResultFrame
-
-local aiResultText = Instance.new("TextLabel")
-aiResultText.Name = "AIText"
-aiResultText.Size = UDim2.new(1, 0, 0, 0)
-aiResultText.AutomaticSize = Enum.AutomaticSize.Y
-aiResultText.BackgroundTransparency = 1
-aiResultText.TextColor3 = Color3.fromRGB(220, 225, 235)
-aiResultText.Font = Enum.Font.Code
-aiResultText.TextSize = 13
-aiResultText.TextWrapped = true
-aiResultText.TextXAlignment = Enum.TextXAlignment.Left
-aiResultText.TextYAlignment = Enum.TextYAlignment.Top
-aiResultText.Text = "AI suggestions appear here. Nothing in this panel changes your game."
-aiResultText.Parent = aiResultFrame
-
--- A separate, scrollable, full-source preview for AI-generated scripts.
--- No edits are applied by generating or viewing a proposal.
-local generateScriptButton = makeButton(
-    "GenerateScript", "Generate Script Proposal (AI)", Color3.fromRGB(65, 105, 210)
-)
-local scriptPreviewTitle = makeLabel(
-    "ScriptPreviewTitle", "AI SCRIPT PROPOSAL - NOT APPLIED", 25, 15
-)
-scriptPreviewTitle.Font = Enum.Font.GothamBold
-local scriptPreviewInfo = makeLabel(
-    "ScriptPreviewInfo",
-    "No script proposed. AI output is untrusted: review ALL code before approving. " ..
-        "Approved scripts are created disabled in ServerScriptService.",
-    75, 13
-)
-local scriptPreviewFrame = Instance.new("ScrollingFrame")
-scriptPreviewFrame.Name = "ScriptSourcePreview"
-scriptPreviewFrame.Size = UDim2.new(1, 0, 0, 300)
-scriptPreviewFrame.BackgroundColor3 = Color3.fromRGB(37, 40, 49)
-scriptPreviewFrame.BorderSizePixel = 0
-scriptPreviewFrame.ScrollBarThickness = 7
-scriptPreviewFrame.CanvasSize = UDim2.fromOffset(0, 0)
-scriptPreviewFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scriptPreviewFrame.Parent = scroll
-
-local scriptPreviewPadding = Instance.new("UIPadding")
-scriptPreviewPadding.PaddingLeft = UDim.new(0, 8)
-scriptPreviewPadding.PaddingRight = UDim.new(0, 12)
-scriptPreviewPadding.PaddingTop = UDim.new(0, 8)
-scriptPreviewPadding.PaddingBottom = UDim.new(0, 8)
-scriptPreviewPadding.Parent = scriptPreviewFrame
-
-local scriptPreviewText = Instance.new("TextLabel")
-scriptPreviewText.Name = "CompleteScriptSource"
-scriptPreviewText.Size = UDim2.new(1, 0, 0, 0)
-scriptPreviewText.AutomaticSize = Enum.AutomaticSize.Y
-scriptPreviewText.BackgroundTransparency = 1
-scriptPreviewText.TextColor3 = Color3.fromRGB(220, 225, 235)
-scriptPreviewText.Font = Enum.Font.Code
-scriptPreviewText.TextSize = 13
-scriptPreviewText.TextWrapped = true
-scriptPreviewText.TextXAlignment = Enum.TextXAlignment.Left
-scriptPreviewText.TextYAlignment = Enum.TextYAlignment.Top
-scriptPreviewText.Text = "No script code to review yet."
-scriptPreviewText.Parent = scriptPreviewFrame
-
-local approveScriptButton = makeButton(
-    "ApproveGeneratedScript", "Approve & Insert Disabled Script", Color3.fromRGB(45, 145, 90)
-)
-local discardScriptButton = makeButton(
-    "DiscardGeneratedScript", "Discard Script Proposal", Color3.fromRGB(105, 65, 65)
-)
-
-local inspectButton = makeButton("InspectGame", "Inspect Game (Read Only)", Color3.fromRGB(74, 79, 95))
-
--- The inspector has its own scroll area so large trees are still readable.
-local hierarchyFrame = Instance.new("ScrollingFrame")
-hierarchyFrame.Name = "HierarchyResults"
-hierarchyFrame.Size = UDim2.new(1, 0, 0, 220)
-hierarchyFrame.BackgroundColor3 = Color3.fromRGB(37, 40, 49)
-hierarchyFrame.BorderSizePixel = 0
-hierarchyFrame.ScrollBarThickness = 6
-hierarchyFrame.CanvasSize = UDim2.fromOffset(0, 0)
-hierarchyFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-hierarchyFrame.Parent = scroll
-
-local hierarchyPadding = Instance.new("UIPadding")
-hierarchyPadding.PaddingTop = UDim.new(0, 7)
-hierarchyPadding.PaddingBottom = UDim.new(0, 7)
-hierarchyPadding.PaddingLeft = UDim.new(0, 8)
-hierarchyPadding.PaddingRight = UDim.new(0, 12)
-hierarchyPadding.Parent = hierarchyFrame
-
-local hierarchyText = Instance.new("TextLabel")
-hierarchyText.Name = "HierarchyText"
-hierarchyText.Size = UDim2.new(1, 0, 0, 0)
-hierarchyText.AutomaticSize = Enum.AutomaticSize.Y
-hierarchyText.BackgroundTransparency = 1
-hierarchyText.Text = "Click Inspect Game to see objects and scripts inside your open place."
-hierarchyText.TextColor3 = Color3.fromRGB(220, 225, 235)
-hierarchyText.TextSize = 13
-hierarchyText.Font = Enum.Font.Code
-hierarchyText.TextWrapped = true
-hierarchyText.TextXAlignment = Enum.TextXAlignment.Left
-hierarchyText.TextYAlignment = Enum.TextYAlignment.Top
-hierarchyText.Parent = hierarchyFrame
-
-local prompt = Instance.new("TextBox")
-prompt.Name = "Request"
-prompt.Size = UDim2.new(1, 0, 0, 110)
-prompt.BackgroundColor3 = Color3.fromRGB(45, 48, 60)
-prompt.BorderSizePixel = 0
-prompt.TextColor3 = Color3.new(1, 1, 1)
-prompt.PlaceholderText = "Create folder Inventory in ReplicatedStorage"
-prompt.Text = ""
-prompt.TextSize = 14
-prompt.Font = Enum.Font.Gotham
-prompt.TextWrapped = true
-prompt.TextXAlignment = Enum.TextXAlignment.Left
-prompt.TextYAlignment = Enum.TextYAlignment.Top
-prompt.MultiLine = true
-prompt.ClearTextOnFocus = false
-prompt.Parent = scroll
-
-local prepareButton = makeButton("Prepare", "Prepare Proposal", Color3.fromRGB(65, 105, 210))
-local proposal = makeLabel(
-    "Proposal",
-    "No change proposed.\n\nSupported local command:\nCreate folder Inventory in ReplicatedStorage",
-    165, 14, Color3.fromRGB(40, 43, 53)
-)
-
-local approveButton = makeButton("Approve", "Approve & Apply", Color3.fromRGB(45, 145, 90))
-local status = makeLabel("Status", "Status: No changes made.", 60, 13)
-
-local allowedParents = {
-    workspace = "Workspace",
-    replicatedstorage = "ReplicatedStorage",
-    serverstorage = "ServerStorage",
-    serverscriptservice = "ServerScriptService",
-    startergui = "StarterGui",
-    starterpack = "StarterPack"
-}
+local function trim(text)
+    return (text:match("^%s*(.-)%s*$"))
+end
 
 local pending = nil
-local pendingScript = nil
-local scriptRequestIndex = 0
-
-local function trim(value)
-    return value:match("^%s*(.-)%s*$")
+local generation = 0
+local function setCanApply(enabled)
+    applyButton.Active = enabled
+    applyButton.AutoButtonColor = enabled
+    applyButton.BackgroundColor3 = enabled and green or Color3.fromRGB(78, 84, 96)
 end
+setCanApply(false)
 
-local function clearProposal(reason)
+local function cancel(reason)
     pending = nil
-    proposal.Text = reason
-    status.Text = "Status: No change is awaiting approval."
+    generation = generation + 1
+    setCanApply(false)
+    if reason then
+        status.Text = reason
+    end
 end
-
-local function clearScriptProposal(reason)
-    pendingScript = nil
-    scriptPreviewInfo.Text = reason
-    scriptPreviewText.Text = "No script is awaiting approval."
-    scriptPreviewFrame.CanvasPosition = Vector2.new(0, 0)
-end
-
--- Walk the real Explorer hierarchy. No source code is read or transmitted.
--- Limits keep inspection responsive even in large places.
-local INSPECT_MAX_OBJECTS = 250
-local INSPECT_MAX_DEPTH = 6
-local INSPECT_SERVICES = {
-    "Workspace", "ReplicatedStorage", "ServerStorage",
-    "ServerScriptService", "StarterGui", "StarterPack"
-}
-
-inspectButton.MouseButton1Click:Connect(function()
-    local lines = {
-        "LIVE GAME HIERARCHY (READ ONLY)",
-        "Open place: " .. game.Name,
-        "Name [ClassName]",
-        ""
-    }
-    local inspected = 0
-    local scriptsFound = 0
-    local truncatedByCount = false
-    local truncatedByDepth = false
-
-    local function getSortedChildren(parent)
-        local children = parent:GetChildren()
-        table.sort(children, function(a, b)
-            local left, right = a.Name:lower(), b.Name:lower()
-            if left == right then
-                return a.ClassName < b.ClassName
-            end
-            return left < right
-        end)
-        return children
+request:GetPropertyChangedSignal("Text"):Connect(function()
+    if pending then
+        cancel("Request edited. Press Prepare to review a fresh proposal.")
+    else
+        generation = generation + 1
     end
-
-    local function visit(instance, depth)
-        if inspected >= INSPECT_MAX_OBJECTS then
-            truncatedByCount = true
-            return
-        end
-
-        inspected = inspected + 1
-        if instance:IsA("LuaSourceContainer") then
-            scriptsFound = scriptsFound + 1
-        end
-
-        table.insert(
-            lines,
-            string.rep("  ", depth) .. "- " .. instance.Name .. " [" .. instance.ClassName .. "]"
-        )
-
-        local children = getSortedChildren(instance)
-        if #children == 0 then
-            return
-        end
-
-        if depth >= INSPECT_MAX_DEPTH then
-            truncatedByDepth = true
-            table.insert(lines, string.rep("  ", depth + 1) .. "... deeper objects hidden")
-            return
-        end
-
-        for _, child in ipairs(children) do
-            if inspected >= INSPECT_MAX_OBJECTS then
-                truncatedByCount = true
-                break
-            end
-            visit(child, depth + 1)
-        end
-    end
-
-    for _, serviceName in ipairs(INSPECT_SERVICES) do
-        local service = game:GetService(serviceName)
-        local children = getSortedChildren(service)
-        table.insert(lines, serviceName .. " (" .. tostring(#children) .. " direct children)")
-
-        for _, child in ipairs(children) do
-            if inspected >= INSPECT_MAX_OBJECTS then
-                truncatedByCount = true
-                break
-            end
-            visit(child, 1)
-        end
-        table.insert(lines, "")
-        if truncatedByCount then
-            break
-        end
-    end
-
-    table.insert(lines, "Objects listed: " .. tostring(inspected))
-    table.insert(lines, "Script objects listed: " .. tostring(scriptsFound))
-    if truncatedByCount then
-        table.insert(lines, "Limited to 250 objects. The game may contain more.")
-    end
-    if truncatedByDepth then
-        table.insert(lines, "Some objects deeper than 6 levels were hidden.")
-    end
-    table.insert(lines, "Names and classes only. Script contents were NOT read.")
-
-    hierarchyText.Text = table.concat(lines, "\n")
-    hierarchyFrame.CanvasPosition = Vector2.new(0, 0)
-    pending = nil
-    status.Text = "Status: Read-only inspection finished. Nothing changed."
 end)
+urlInput.FocusLost:Connect(function()
+    local raw = trim(urlInput.Text):gsub("/+$", "")
+    if raw:match("^https://[%w%.%-]+$") then
+        urlInput.Text = raw
+        pcall(function() plugin:SetSetting("AiBackendUrl", raw) end)
+    end
+    cancel("Connection updated. Prepare a fresh proposal.")
+end)
+tokenInput.FocusLost:Connect(function()
+    local entered = trim(tokenInput.Text)
+    if entered ~= "" then
+        token = entered
+    end
+    tokenInput.Text = ""
+    tokenInput.PlaceholderText = token and "Private token loaded for this Studio session" or "Paste CLIENT_TOKEN, then press Enter"
+    cancel(token and "Private token loaded. You can press Prepare." or "Enter private CLIENT_TOKEN.")
+end)
+contextButton.MouseButton1Click:Connect(function()
+    consent = not consent
+    pcall(function() plugin:SetSetting("OrangeJuiceGameContextConsent", consent) end)
+    refreshSettings()
+    cancel("Context sharing " .. (consent and "enabled" or "disabled") .. ". Prepare again.")
+end)
+
+local roots = {
+    Workspace = true, ReplicatedStorage = true, ServerStorage = true,
+    ServerScriptService = true, StarterGui = true, StarterPack = true,
+    StarterPlayer = true
+}
+local rootList = {
+    "Workspace", "ServerScriptService", "StarterGui", "StarterPlayer",
+    "ReplicatedStorage", "ServerStorage", "StarterPack"
+}
+local allowedClass = {
+    Folder = true, Model = true, Part = true, WedgePart = true,
+    SpawnLocation = true, ScreenGui = true, Frame = true,
+    TextLabel = true, TextButton = true, ImageLabel = true,
+    UICorner = true, UIStroke = true, UIListLayout = true,
+    UIPadding = true, ProximityPrompt = true, ClickDetector = true,
+    Script = true, LocalScript = true, ModuleScript = true
+}
+local allowedProperty = {
+    BasePart = {
+        Size=true, Position=true, Orientation=true, Anchored=true,
+        CanCollide=true, Transparency=true, Color=true, Material=true, Shape=true
+    },
+    GuiObject = {
+        Size=true, Position=true, AnchorPoint=true, BackgroundColor3=true,
+        BackgroundTransparency=true, Visible=true, ZIndex=true
+    },
+    TextObject = { Text=true, TextColor3=true, TextSize=true, TextWrapped=true, Font=true },
+    ScreenGui = { ResetOnSpawn=true, IgnoreGuiInset=true },
+    UICorner = { CornerRadius=true },
+    UIStroke = { Thickness=true, Color=true },
+    UIListLayout = { FillDirection=true, Padding=true },
+    UIPadding = { PaddingTop=true, PaddingLeft=true, PaddingRight=true, PaddingBottom=true },
+    ProximityPrompt = {
+        ActionText=true, ObjectText=true, HoldDuration=true, MaxActivationDistance=true
+    }
+}
+local function safeProperty(instance, prop)
+    local function inGroup(group)
+        return allowedProperty[group] and allowedProperty[group][prop]
+    end
+    if instance:IsA("BasePart") and inGroup("BasePart") then return true end
+    if instance:IsA("GuiObject") and inGroup("GuiObject") then return true end
+    if (instance:IsA("TextLabel") or instance:IsA("TextButton")) and inGroup("TextObject") then return true end
+    return inGroup(instance.ClassName) == true
+end
+
+local function components(path)
+    if type(path) ~= "string" or #path > 340 then return nil end
+    local parts = string.split(path, "/")
+    if #parts < 1 or #parts > 9 or not roots[parts[1]] then return nil end
+    for _, p in ipairs(parts) do
+        if #p < 1 or #p > 50 or not p:match("^[%w_][%w_ %-]*$") then
+            return nil
+        end
+    end
+    return parts
+end
+local function resolve(path)
+    local parts = components(path)
+    if not parts then return nil end
+    local obj = game:GetService(parts[1])
+    for i = 2, #parts do
+        obj = obj:FindFirstChild(parts[i])
+        if not obj then return nil end
+    end
+    return obj
+end
+local function pathOf(instance)
+    local chain = {}
+    local here = instance
+    while here and here ~= game do
+        table.insert(chain, 1, here.Name)
+        if roots[here.Name] and here.Parent == game then
+            local result = table.concat(chain, "/")
+            return components(result) and result or nil
+        end
+        here = here.Parent
+    end
+    return nil
+end
+
+local function snapshotOfGame(searchText)
+    local words = {}
+    for word in searchText:lower():gmatch("[%w_]+") do
+        if #word >= 4 and not ({
+            make=true,create=true,with=true,when=true,that=true,what=true,
+            script=true,working=true,please=true,have=true,from=true
+        })[word] then
+            table.insert(words, word)
+        end
+    end
+    local records = {}
+    local inspected = 0
+    local serviceCounts = {}
+    for _, rootName in ipairs(rootList) do
+        local service = game:GetService(rootName)
+        serviceCounts[rootName] = #service:GetChildren()
+        for _, obj in ipairs(service:GetDescendants()) do
+            inspected = inspected + 1
+            if inspected > 4500 then break end
+            local p = pathOf(obj)
+            if p and #p <= 260 and not p:find("/Camera/") and
+                not p:find("/Terrain/") and obj.ClassName ~= "Terrain" then
+                local text = (p .. " " .. obj.ClassName):lower()
+                local score = 0
+                for _, word in ipairs(words) do
+                    if text:find(word, 1, true) then score = score + 12 end
+                end
+                if obj:IsA("BasePart") or obj:IsA("GuiObject") then score = score + 2 end
+                if obj:IsA("LuaSourceContainer") then score = score + 1 end
+                local details = ""
+                if obj:IsA("BasePart") then
+                    local v = obj.Size
+                    details = string.format(" size=(%.1f,%.1f,%.1f)", v.X,v.Y,v.Z)
+                elseif obj:IsA("TextLabel") or obj:IsA("TextButton") then
+                    details = " text=" .. obj.Text:sub(1, 35):gsub("[%c]", " ")
+                end
+                table.insert(records, {p=p, value=p .. " [" .. obj.ClassName .. "]" .. details, score=score})
+            end
+        end
+        if inspected > 4500 then break end
+    end
+    table.sort(records, function(a,b)
+        if a.score == b.score then return a.p < b.p end
+        return a.score > b.score
+    end)
+    local lines = {"GAME HIERARCHY SNAPSHOT. EXISTING OBJECTS ONLY. No script source included."}
+    for _, rootName in ipairs(rootList) do
+        table.insert(lines, rootName .. " direct children: " .. tostring(serviceCounts[rootName] or "?"))
+    end
+    table.insert(lines, "Selected objects, full paths:")
+    local listed = 0
+    for _, record in ipairs(records) do
+        if listed >= 220 then break end
+        if #table.concat(lines, "\n") + #record.value > 10300 then break end
+        table.insert(lines, record.value)
+        listed = listed + 1
+    end
+    table.insert(lines, "Objects listed: " .. listed .. "; sampled " .. inspected ..
+        ". Snapshot may be incomplete: check runtime before referring to unlisted objects.")
+    return table.concat(lines, "\n"):sub(1, 11000)
+end
+
+local function parseNumbers(raw, count)
+    local values = {}
+    for segment in (raw .. ","):gmatch("(.-),") do
+        local number = tonumber(trim(segment))
+        if not number or number ~= number or math.abs(number) > 20000 then
+            return nil
+        end
+        table.insert(values, number)
+    end
+    if #values ~= count then return nil end
+    return values
+end
+local function parseValue(instance, name, raw)
+    if not safeProperty(instance, name) or type(raw) ~= "string" or #raw > 400 then
+        return nil, "Unsupported property: " .. tostring(name)
+    end
+    local ok, previous = pcall(function() return instance[name] end)
+    if not ok then return nil, "Cannot inspect property " .. name end
+    local kind = typeof(previous)
+    if kind == "string" then return raw end
+    if kind == "boolean" then
+        if raw == "true" then return true end
+        if raw == "false" then return false end
+        return nil, "Expected true/false for " .. name
+    end
+    if kind == "number" then
+        local n = tonumber(raw)
+        if n and n == n and math.abs(n) <= 20000 then
+            return n
+        end
+        return nil, "Invalid number for " .. name
+    end
+    if kind == "Vector3" then
+        local p = parseNumbers(raw, 3)
+        return p and Vector3.new(p[1],p[2],p[3]) or nil, "Invalid Vector3 " .. name
+    end
+    if kind == "Vector2" then
+        local p = parseNumbers(raw, 2)
+        return p and Vector2.new(p[1],p[2]) or nil, "Invalid Vector2 " .. name
+    end
+    if kind == "UDim2" then
+        local p = parseNumbers(raw, 4)
+        return p and UDim2.new(p[1],p[2],p[3],p[4]) or nil, "Invalid UDim2 " .. name
+    end
+    if kind == "UDim" then
+        local p = parseNumbers(raw, 2)
+        return p and UDim.new(p[1],p[2]) or nil, "Invalid UDim " .. name
+    end
+    if kind == "Color3" then
+        local p = parseNumbers(raw, 3)
+        if not p then return nil, "Invalid RGB " .. name end
+        for _, n in ipairs(p) do
+            if n < 0 or n > 255 then return nil, "RGB outside 0-255 for " .. name end
+        end
+        return Color3.fromRGB(p[1],p[2],p[3])
+    end
+    if kind == "EnumItem" then
+        local enumType = ({
+            Material = Enum.Material, Shape = Enum.PartType,
+            Font = Enum.Font, FillDirection = Enum.FillDirection
+        })[name]
+        local result = enumType and enumType[raw] or nil
+        return result, result and nil or "Unknown enum for " .. name
+    end
+    return nil, "Unsupported value type " .. kind
+end
+
+local function safeScriptLocation(className, path)
+    if className == "LocalScript" then
+        return path:match("^StarterGui/") ~= nil or
+            path:match("^StarterPlayer/StarterPlayerScripts/") ~= nil
+    end
+    return className ~= "Script" or
+        path:match("^ServerScriptService/") ~= nil or
+        path:match("^Workspace/") ~= nil
+end
+local function isScript(className)
+    return className == "Script" or className == "LocalScript" or className == "ModuleScript"
+end
+
+local function validatePlan(data)
+    if type(data) ~= "table" or type(data.summary) ~= "string" or
+        type(data.steps) ~= "table" or #data.steps < 1 or #data.steps > 24 then
+        return nil, "AI returned an invalid plan."
+    end
+    local out = {}
+    local seen = {}
+    local preview = {
+        "AI PLAN — NOTHING HAS CHANGED", "",
+        data.summary:sub(1, 700), "",
+        "Prepare checks every path. Apply will make the exact listed changes.",
+        "All created Scripts / LocalScripts are DISABLED.", ""
+    }
+    for i, step in ipairs(data.steps) do
+        if type(step) ~= "table" or type(step.path) ~= "string" or
+            type(step.className) ~= "string" or not allowedClass[step.className] or
+            type(step.properties) ~= "table" or #step.properties > 16 or
+            type(step.source) ~= "string" then
+            return nil, "Unsupported AI step #" .. i
+        end
+        local path = step.path
+        local parts = components(path)
+        if not parts or #parts < 2 or seen[path] then
+            return nil, "Invalid or duplicate path: " .. path
+        end
+        seen[path] = true
+        local parentPath = table.concat(parts, "/", 1, #parts - 1)
+        if not resolve(parentPath) and not seen[parentPath] then
+            return nil, "Missing parent " .. parentPath .. ". AI must include it first."
+        end
+        if not safeScriptLocation(step.className, path) then
+            return nil, "Script location not supported: " .. path
+        end
+        local existing = resolve(path)
+        if existing and existing.ClassName ~= step.className then
+            return nil, "Conflict: " .. path .. " is " .. existing.ClassName ..
+                ", not " .. step.className
+        end
+        if existing and isScript(step.className) then
+            return nil, "Existing script at " .. path ..
+                ". This version never overwrites existing script source."
+        end
+        if isScript(step.className) and (step.source == "" or #step.source > 9000) then
+            return nil, "Script source is missing or too long: " .. path
+        end
+        if not isScript(step.className) and step.source ~= "" then
+            return nil, "Non-script includes executable source: " .. path
+        end
+        if step.source:find("loadstring%s*%(") or
+            step.source:find("require%s*%(%s*%d+") then
+            return nil, "Proposal contains unsupported dynamic code loading."
+        end
+        local probe = existing or Instance.new(step.className)
+        local typed = {}
+        local baseline = {}
+        local properties = {}
+        local unique = {}
+        for _, prop in ipairs(step.properties) do
+            if type(prop) ~= "table" or type(prop.name) ~= "string" or
+                type(prop.value) ~= "string" or unique[prop.name] then
+                return nil, "Malformed or repeated property in " .. path
+            end
+            unique[prop.name] = true
+            local value, err = parseValue(probe, prop.name, prop.value)
+            if value == nil then
+                return nil, err or "Bad value"
+            end
+            typed[prop.name] = value
+            if existing then
+                baseline[prop.name] = existing[prop.name]
+            end
+            table.insert(properties, {name=prop.name, printed=prop.value})
+        end
+        local mode = existing and (next(typed) and "UPDATE / REUSE" or "REUSE") or "CREATE"
+        table.insert(preview, tostring(i) .. ". " .. mode .. " " .. path .. " [" .. step.className .. "]")
+        for _, prop in ipairs(properties) do
+            table.insert(preview, "   " .. prop.name .. " = " .. prop.printed)
+        end
+        if isScript(step.className) then
+            table.insert(preview, "   FULL LUAU SOURCE (will be disabled):")
+            table.insert(preview, step.source)
+            table.insert(preview, "   END SOURCE")
+        end
+        table.insert(preview, "")
+        table.insert(out, {
+            path=path, parentPath=parentPath, name=parts[#parts], className=step.className,
+            existing=existing ~= nil, instance=existing, properties=typed,
+            previous=baseline, source=step.source
+        })
+    end
+    table.insert(preview, "Nothing changes until you click APPLY. Ctrl+Z can undo the applied change.")
+    return {steps=out, summary=data.summary, preview=table.concat(preview, "\n")}, nil
+end
 
 prepareButton.MouseButton1Click:Connect(function()
-    local request = trim(prompt.Text)
-    pending = nil
-
-    if request == "" then
-        clearProposal("Type a request first. No changes made.")
+    cancel()
+    local text = trim(request.Text)
+    if #text < 2 or #text > 3000 then
+        status.Text = "Enter a request of 2-3000 characters."
+        return
+    end
+    local worker = trim(urlInput.Text):gsub("/+$", "")
+    if not worker:match("^https://[%w%.%-]+$") then
+        status.Text = "Open Connection settings and enter your HTTPS Worker URL."
+        settingsOpen = true; refreshSettings()
+        return
+    end
+    if not token or token == "" then
+        status.Text = "Open Connection settings and load your private CLIENT_TOKEN."
+        settingsOpen = true; refreshSettings()
+        return
+    end
+    if not consent then
+        status.Text = "To automatically check your existing objects, enable game structure sharing in Connection settings."
+        settingsOpen = true; refreshSettings()
         return
     end
 
-    local folderName, parentText = request:match(
-        "^[Cc][Rr][Ee][Aa][Tt][Ee]%s+[Ff][Oo][Ll][Dd][Ee][Rr]%s+(.+)%s+[Ii][Nn]%s+(%w+)$"
-    )
-
-    local parentService = parentText and allowedParents[parentText:lower()]
-    folderName = folderName and trim(folderName)
-
-    if not folderName or not parentService then
-        clearProposal(
-            "AI is not connected yet, so I cannot interpret free-form requests.\n\n" ..
-            "Supported format:\nCreate folder Inventory in ReplicatedStorage\n\n" ..
-            "Allowed locations: Workspace, ReplicatedStorage, ServerStorage, " ..
-            "ServerScriptService, StarterGui, StarterPack."
-        )
-        return
-    end
-
-    if #folderName > 50 or folderName:find("[^%w _%-]") then
-        clearProposal("Folder names must be 1-50 letters, numbers, spaces, underscores or hyphens.")
-        return
-    end
-
-    local parent = game:GetService(parentService)
-    if parent:FindFirstChild(folderName) then
-        clearProposal("A child named '" .. folderName .. "' already exists in " .. parentService .. ".")
-        return
-    end
-
-    pending = {
-        original = prompt.Text,
-        name = folderName,
-        service = parentService
-    }
-
-    proposal.Text =
-        "PROPOSED CHANGE (NOT YET APPLIED)\n\n" ..
-        "Action: Create one Folder instance\n" ..
-        "Name: " .. folderName .. "\n" ..
-        "Parent: " .. parentService .. "\n\n" ..
-        "No scripts will run. No other objects will change.\n" ..
-        "Approve only if this is what you want."
-    status.Text = "Status: Waiting for your approval. Nothing changed."
+    -- Every Prepare refreshes the structure from the REAL open game.
+    local outline = snapshotOfGame(text)
+    local original = request.Text
+    local serial = generation
+    status.Text = "Preparing a combined plan. No game changes made."
+    previewText.Text = "Inspecting existing models, UI and scripts. Asking AI to propose missing pieces..."
+    previewTitle.Text = "Preparing..."
+    task.spawn(function()
+        local ok, response = pcall(function()
+            return HttpService:RequestAsync({
+                Url=worker .. "/v1/prepare",
+                Method="POST",
+                Headers={
+                    ["Content-Type"]="application/json",
+                    ["Authorization"]="Bearer " .. token
+                },
+                Body=HttpService:JSONEncode({
+                    prompt=text, model=preferredModel, gameOutline=outline
+                })
+            })
+        end)
+        if generation ~= serial or request.Text ~= original then return end
+        if not ok then
+            status.Text = "Network error. Check Worker URL and Roblox Studio HTTP permission."
+            previewText.Text = tostring(response)
+            return
+        end
+        local parsedOK, decoded = pcall(function()
+            return HttpService:JSONDecode(response.Body)
+        end)
+        if not response.Success then
+            local message = parsedOK and type(decoded) == "table" and decoded.error
+            status.Text = "Prepare failed: " .. tostring(message or response.StatusCode)
+            previewText.Text = "No changes made."
+            return
+        end
+        if not parsedOK or type(decoded) ~= "table" then
+            status.Text = "Worker returned invalid JSON. No changes made."
+            return
+        end
+        local plan, err = validatePlan(decoded.plan)
+        if not plan then
+            status.Text = "Proposal needs a correction: " .. tostring(err)
+            previewText.Text = "Nothing changed. Try describing a smaller feature."
+            return
+        end
+        plan.original = original
+        plan.serial = serial
+        pending = plan
+        previewText.Text = plan.preview
+        previewFrame.CanvasPosition = Vector2.new(0, 0)
+        previewTitle.Text = "Review the full plan before Apply"
+        status.Text = "Prepared " .. #plan.steps .. " objects/changes. Nothing changed yet."
+        setCanApply(true)
+    end)
 end)
 
--- Editing the prompt after preview always invalidates approval.
-prompt:GetPropertyChangedSignal("Text"):Connect(function()
-    scriptRequestIndex = scriptRequestIndex + 1 -- invalidate in-flight AI proposal if edited
-    if not pendingScript and scriptPreviewInfo.Text:find("Generating", 1, true) then
-        clearScriptProposal("Request edited. Generate a fresh script proposal.")
-    end
-    if pending and prompt.Text ~= pending.original then
-        clearProposal("Request changed. Prepare a new proposal before approving.")
-    end
-    if pendingScript and prompt.Text ~= pendingScript.original then
-        clearScriptProposal("Request changed. Generate a fresh Script proposal.")
-    end
-end)
-
-approveButton.MouseButton1Click:Connect(function()
+applyButton.MouseButton1Click:Connect(function()
     if not pending then
-        status.Text = "Status: Nothing to apply. Prepare a proposal first."
+        status.Text = "Nothing is prepared. Press Prepare first."
         return
     end
-
-    local approved = pending
+    local plan = pending
     pending = nil
-
-    if prompt.Text ~= approved.original then
-        clearProposal("Request changed. Prepare a new proposal before approving.")
+    generation = generation + 1
+    setCanApply(false)
+    if request.Text ~= plan.original then
+        status.Text = "Request changed. Prepare again."
         return
     end
 
-    local parent = game:GetService(approved.service)
-    if parent:FindFirstChild(approved.name) then
-        clearProposal("That name is already used. No changes made.")
-        return
-    end
-
-    -- Require a Studio undo recording before making even this small change.
-    local recordingOK, recording = pcall(function()
-        return ChangeHistoryService:TryBeginRecording("RobloxAIDeveloper_CreateFolder")
-    end)
-    if not recordingOK or not recording then
-        clearProposal("Studio could not start an undo recording. No changes made.")
-        return
-    end
-
-    local ok, err = pcall(function()
-        local folder = Instance.new("Folder")
-        folder.Name = approved.name
-        folder.Parent = parent
-    end)
-
-    ChangeHistoryService:FinishRecording(
-        recording,
-        ok and Enum.FinishRecordingOperation.Commit
-            or Enum.FinishRecordingOperation.Cancel
-    )
-
-    if ok then
-        proposal.Text = "APPLIED: Created " .. approved.service .. "." .. approved.name
-        status.Text = "Status: One folder created. Use Studio Undo (Ctrl+Z) to revert."
-    else
-        proposal.Text = "Could not create folder: " .. tostring(err)
-        status.Text = "Status: The action failed; recording cancelled."
-    end
-end)
-
-
--- Send only what the user chose: prompt by default, optionally a short outline.
--- Never read Script.Source or execute AI output.
-local function buildGameOutline()
-    local lines = {}
-    local listed = 0
-    local services = {
-        "Workspace", "ReplicatedStorage", "ServerStorage",
-        "ServerScriptService", "StarterGui", "StarterPack"
-    }
-    local function walk(instance, level)
-        if listed >= 80 or level > 3 then
-            return
-        end
-        listed = listed + 1
-        local safeName = instance.Name:gsub("[%c]", " "):sub(1, 75)
-        table.insert(lines, string.rep("  ", level) .. safeName .. " [" .. instance.ClassName .. "]")
-        if level >= 3 then
-            return
-        end
-        local children = instance:GetChildren()
-        table.sort(children, function(a, b)
-            return a.Name:lower() < b.Name:lower()
-        end)
-        for _, child in ipairs(children) do
-            if listed >= 80 then
-                break
+    -- Recheck every object before starting the single undo recording.
+    for _, step in ipairs(plan.steps) do
+        local existing = resolve(step.path)
+        if step.existing then
+            if existing ~= step.instance or not existing or existing.ClassName ~= step.className then
+                status.Text = "Game changed after Prepare: " .. step.path .. ". Prepare again."
+                return
             end
-            walk(child, level + 1)
-        end
-    end
-    for _, serviceName in ipairs(services) do
-        if listed >= 80 then
-            break
-        end
-        table.insert(lines, serviceName .. ":")
-        local service = game:GetService(serviceName)
-        local children = service:GetChildren()
-        table.sort(children, function(a, b)
-            return a.Name:lower() < b.Name:lower()
-        end)
-        for _, child in ipairs(children) do
-            if listed >= 80 then
-                break
+            for propertyName, oldValue in pairs(step.previous) do
+                if existing[propertyName] ~= oldValue then
+                    status.Text = "Property changed after Prepare: " .. step.path .. ". Prepare again."
+                    return
+                end
             end
-            walk(child, 1)
+        elseif existing then
+            status.Text = "Object appeared after Prepare: " .. step.path .. ". Prepare again."
+            return
         end
-    end
-    return table.concat(lines, "\n"):sub(1, 6000)
-end
-
-local aiRequestIndex = 0
-askAIButton.MouseButton1Click:Connect(function()
-    local request = trim(prompt.Text)
-    if request == "" or #request > 3000 then
-        aiResultText.Text = "Enter a request of 1-3000 characters in the description box."
-        return
-    end
-    local url = trim(backendUrlInput.Text):gsub("/+$", "")
-    if not url:match("^https://[%w%.%-]+$") then
-        aiResultText.Text = "Enter your own HTTPS backend URL first."
-        return
-    end
-    if not sessionToken or sessionToken == "" then
-        aiResultText.Text = "Enter the private test token, then press Enter to load it for this session."
-        return
-    end
-    pending = nil -- AI suggestions do not become executable proposals.
-    aiRequestIndex = aiRequestIndex + 1
-    local currentIndex = aiRequestIndex
-    aiResultText.Text = "Contacting your configured AI backend..."
-    status.Text = "Status: Waiting for AI suggestion. No game changes made."
-
-    local body = {
-        prompt = request,
-        model = modelOptions[modelIndex].id
-    }
-    if shareOutline then
-        body.gameOutline = buildGameOutline()
     end
 
-    task.spawn(function()
-        local success, response = pcall(function()
-            return HttpService:RequestAsync({
-                Url = url .. "/v1/plan",
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "Bearer " .. sessionToken
-                },
-                Body = HttpService:JSONEncode(body)
-            })
-        end)
-        if aiRequestIndex ~= currentIndex then
-            return
-        end
-        if not success then
-            aiResultText.Text = "Network request failed. Check backend URL, plugin HTTP permission, and Output for errors."
-            status.Text = "Status: AI request failed. Nothing changed."
-            return
-        end
-        local parsedOK, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
-        if not response.Success then
-            local reason = parsedOK and type(data) == "table" and data.error
-            aiResultText.Text = "AI error: " .. tostring(reason or response.StatusCode)
-            status.Text = "Status: AI request failed. Nothing changed."
-            return
-        end
-        if not parsedOK or type(data) ~= "table" or type(data.suggestion) ~= "string" then
-            aiResultText.Text = "The AI backend returned an unexpected response."
-            status.Text = "Status: AI response invalid. Nothing changed."
-            return
-        end
-        aiResultText.Text = "AI SUGGESTION (NOT APPLIED)\n\n" .. data.suggestion:sub(1, 7000)
-        aiResultFrame.CanvasPosition = Vector2.new(0, 0)
-        status.Text = "Status: AI suggestion received. No changes made."
+    local okRec, recording = pcall(function()
+        return ChangeHistoryService:TryBeginRecording("OrangeJuiceAI_ApplyPlan")
     end)
-end)
-
-
--- Script creation is a separate user-controlled, two-step operation:
--- generate complete code for review, then click Approve to create ONE disabled Script.
--- It intentionally cannot overwrite files, edit live scripts, or run code.
-local function getBackendSettings()
-    local url = trim(backendUrlInput.Text):gsub("/+$", "")
-    if not url:match("^https://[%w%.%-]+$") then
-        return nil, "Enter your HTTPS backend URL first."
-    end
-    if not sessionToken or sessionToken == "" then
-        return nil, "Enter the private test token, then press Enter."
-    end
-    return url, nil
-end
-
-generateScriptButton.MouseButton1Click:Connect(function()
-    local request = trim(prompt.Text)
-    scriptRequestIndex = scriptRequestIndex + 1
-    local index = scriptRequestIndex
-    clearScriptProposal("No script proposed.")
-    if request == "" or #request > 3000 then
-        scriptPreviewInfo.Text = "Enter a request of 1-3000 characters in the request box."
+    if not okRec or not recording then
+        status.Text = "Studio Undo recording unavailable. No changes made."
         return
     end
-
-    local url, configError = getBackendSettings()
-    if not url then
-        scriptPreviewInfo.Text = configError
-        return
-    end
-
-    local original = prompt.Text
-    local chosenModel = modelOptions[modelIndex].id
-    local payload = { prompt = request, model = chosenModel }
-    if shareOutline then
-        payload.gameOutline = buildGameOutline()
-    end
-    scriptPreviewInfo.Text = "Generating proposed code... No game changes made."
-    scriptPreviewText.Text = "Contacting AI backend..."
-    status.Text = "Status: Generating AI Script proposal. No changes made."
-
-    task.spawn(function()
-        local success, response = pcall(function()
-            return HttpService:RequestAsync({
-                Url = url .. "/v1/propose-script",
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "Bearer " .. sessionToken
-                },
-                Body = HttpService:JSONEncode(payload)
-            })
-        end)
-        if scriptRequestIndex ~= index then
-            return
-        end
-        if prompt.Text ~= original or modelOptions[modelIndex].id ~= chosenModel then
-            clearScriptProposal("Request or model changed. Generate a fresh script proposal.")
-            return
-        end
-        if not success then
-            clearScriptProposal("Network error. Check plugin HTTP permission and your Worker URL.")
-            return
-        end
-        local decodedOK, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
-        if not response.Success then
-            local reason = decodedOK and type(data) == "table" and data.error
-            clearScriptProposal("AI error: " .. tostring(reason or response.StatusCode))
-            return
-        end
-        local item = decodedOK and type(data) == "table" and data.proposal
-        if type(item) ~= "table" or item.service ~= "ServerScriptService" or
-            type(item.name) ~= "string" or #item.name > 50 or
-            not item.name:match("^[%a][%w_ ]*$") or
-            type(item.code) ~= "string" or #item.code == 0 or
-            #item.code > 9000 or not item.code:match("%S") then
-            clearScriptProposal("Invalid script proposal received. Nothing changed.")
-            return
-        end
-        local parent = game:GetService("ServerScriptService")
-        if parent:FindFirstChild(item.name) then
-            clearScriptProposal("A child named '" .. item.name ..
-                "' already exists in ServerScriptService. Request a different script name.")
-            return
-        end
-
-        pendingScript = {
-            original = original,
-            model = chosenModel,
-            name = item.name,
-            code = item.code
-        }
-        scriptPreviewInfo.Text =
-            "ACTION: Create one DISABLED Script\n" ..
-            "NAME: " .. item.name .. "\n" ..
-            "LOCATION: ServerScriptService\n" ..
-            "Review the ENTIRE Luau code below. It may contain mistakes or unsafe behavior."
-        scriptPreviewText.Text = item.code
-        scriptPreviewFrame.CanvasPosition = Vector2.new(0, 0)
-        status.Text = "Status: AI Script ready for review. No changes made."
-    end)
-end)
-
-discardScriptButton.MouseButton1Click:Connect(function()
-    scriptRequestIndex = scriptRequestIndex + 1
-    clearScriptProposal("Script proposal discarded. Nothing was inserted.")
-    status.Text = "Status: Script proposal discarded. Nothing changed."
-end)
-
-approveScriptButton.MouseButton1Click:Connect(function()
-    if not pendingScript then
-        status.Text = "Status: No AI Script to approve. Generate a proposal first."
-        return
-    end
-
-    local approved = pendingScript
-    clearScriptProposal("Approval received. Attempting to create disabled script...")
-    scriptRequestIndex = scriptRequestIndex + 1
-
-    if prompt.Text ~= approved.original or
-        modelOptions[modelIndex].id ~= approved.model then
-        scriptPreviewInfo.Text = "Request or model changed. Generate a fresh proposal."
-        return
-    end
-    local parent = game:GetService("ServerScriptService")
-    if parent:FindFirstChild(approved.name) then
-        scriptPreviewInfo.Text = "Name already exists. Nothing was inserted."
-        return
-    end
-
-    local recordingOK, recording = pcall(function()
-        return ChangeHistoryService:TryBeginRecording("OrangeJuiceAI_CreateDisabledScript")
-    end)
-    if not recordingOK or not recording then
-        scriptPreviewInfo.Text = "Unable to start an Undo recording. Nothing was inserted."
-        return
-    end
-
-    local createdScript = nil
+    local made = {}
+    local changed = {}
+    local changedCount = 0
+    local disabledScripts = 0
     local ok, err = pcall(function()
-        createdScript = Instance.new("Script")
-        createdScript.Enabled = false
-        createdScript.Name = approved.name
-        createdScript.Source = approved.code
-        createdScript.Parent = parent
+        for _, step in ipairs(plan.steps) do
+            local target = step.existing and resolve(step.path) or Instance.new(step.className)
+            if not target then error("Missing target " .. step.path) end
+            if not step.existing then
+                target.Name = step.name
+                if isScript(step.className) then
+                    if step.className ~= "ModuleScript" then
+                        target.Enabled = false
+                    end
+                    target.Source = step.source
+                    if step.className ~= "ModuleScript" then
+                        disabledScripts = disabledScripts + 1
+                    end
+                end
+            end
+            for propName, value in pairs(step.properties) do
+                if step.existing then
+                    table.insert(changed, {instance=target, prop=propName, value=target[propName]})
+                end
+                target[propName] = value
+                changedCount = changedCount + 1
+            end
+            if not step.existing then
+                -- Parent was checked in Prepare or constructed by an earlier step.
+                local parent = resolve(step.parentPath)
+                if not parent then
+                    target:Destroy()
+                    error("Missing parent on Apply: " .. step.parentPath)
+                end
+                target.Parent = parent
+                table.insert(made, target)
+            end
+        end
     end)
-    if not ok and createdScript then
-        pcall(function()
-            createdScript:Destroy()
-        end)
+    if not ok then
+        -- Explicit rollback in addition to Studio's cancelled Undo recording.
+        for i = #changed, 1, -1 do
+            local c = changed[i]
+            pcall(function() c.instance[c.prop] = c.value end)
+        end
+        for i = #made, 1, -1 do
+            pcall(function() made[i]:Destroy() end)
+        end
     end
-    ChangeHistoryService:FinishRecording(
-        recording,
-        ok and Enum.FinishRecordingOperation.Commit
-            or Enum.FinishRecordingOperation.Cancel
-    )
-
-    if ok then
-        scriptPreviewInfo.Text =
-            "CREATED: ServerScriptService." .. approved.name ..
-            "\nSTATE: DISABLED. Inspect Source before manually enabling it in Studio." ..
-            "\nUse Ctrl+Z to undo the insertion."
-        scriptPreviewText.Text = approved.code
-        status.Text = "Status: One disabled Script inserted after approval. Undo: Ctrl+Z."
+    local finishOK = pcall(function()
+        ChangeHistoryService:FinishRecording(
+            recording,
+            ok and Enum.FinishRecordingOperation.Commit
+                or Enum.FinishRecordingOperation.Cancel
+        )
+    end)
+    if ok and finishOK then
+        previewTitle.Text = "Applied — inspect your new objects"
+        status.Text = "Applied: " .. #made .. " created, " .. changedCount ..
+            " property assignments. " .. disabledScripts ..
+            " Scripts disabled. Use Ctrl+Z to undo."
+    elseif not ok then
+        status.Text = "Apply failed and attempted rollback: " .. tostring(err)
     else
-        scriptPreviewInfo.Text = "Could not insert the script: " .. tostring(err)
-        status.Text = "Status: Script insertion failed. No code was enabled."
-    end
-end)
-
--- Model changes also invalidate any pending approval or in-flight proposal.
-modelButton.MouseButton1Click:Connect(function()
-    scriptRequestIndex = scriptRequestIndex + 1
-    if pendingScript then
-        clearScriptProposal("Model changed. Generate a fresh proposal.")
+        status.Text = "Studio could not finish Undo recording. Inspect Explorer before continuing."
     end
 end)
 
@@ -891,4 +763,4 @@ openButton.Click:Connect(function()
     widget.Enabled = not widget.Enabled
 end)
 
-print("Roblox AI Developer v0.6 loaded (AI script proposals require explicit approval; inserted disabled).")
+print("Orange Juice AI v0.7 loaded — automatic context-based combined proposals; explicit Apply.")
