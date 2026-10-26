@@ -38,7 +38,7 @@ No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting 
 Provide a concise summary of the WHOLE change, not an essay. Approval happens separately in Studio, and inserted scripts start disabled.
 Example if asked "create a door that changes color when touched": propose Workspace/Door Part with Anchored true, Size, Position, Color, AND Workspace/Door/TouchHandler Script with functioning Touched event code. If Workspace/Door already appears as a Part, reuse it and only add the missing child Script.
 Example "shop UI": propose StarterGui/ShopGui ScreenGui, StarterGui/ShopGui/Panel Frame, labels/buttons AND a LocalScript attached to UI that makes buttons work when possible.
-If a request cannot be safely fulfilled with these classes, propose a small achievable subset and make the limitation clear in summary.\`;
+If a request cannot be safely fulfilled with these classes, propose a small achievable subset and make the limitation clear in summary.`;
 
 const unifiedFormat = {
   type: "json_schema", name: "orange_juice_multi_object_plan", strict: true,
