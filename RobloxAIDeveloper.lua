@@ -345,13 +345,20 @@ local function snapshotOfGame(searchText)
     end
     local records = {}
     local inspected = 0
+    -- Sample every major service, so large Workspace maps cannot hide all GUIs/scripts.
+    local serviceBudget = {
+        Workspace=2400, ServerScriptService=650, StarterGui=800,
+        StarterPlayer=500, ReplicatedStorage=400, ServerStorage=250, StarterPack=200
+    }
     local serviceCounts = {}
     for _, rootName in ipairs(rootList) do
         local service = game:GetService(rootName)
         serviceCounts[rootName] = #service:GetChildren()
+        local sampledThisRoot = 0
         for _, obj in ipairs(service:GetDescendants()) do
+            sampledThisRoot = sampledThisRoot + 1
+            if sampledThisRoot > serviceBudget[rootName] then break end
             inspected = inspected + 1
-            if inspected > 4500 then break end
             local p = pathOf(obj)
             if p and #p <= 260 and not p:find("/Camera/") and
                 not p:find("/Terrain/") and obj.ClassName ~= "Terrain" then
@@ -369,10 +376,11 @@ local function snapshotOfGame(searchText)
                 elseif obj:IsA("TextLabel") or obj:IsA("TextButton") then
                     details = " text=" .. obj.Text:sub(1, 35):gsub("[%c]", " ")
                 end
-                table.insert(records, {p=p, value=p .. " [" .. obj.ClassName .. "]" .. details, score=score})
+                table.insert(records, {
+                    p=p, root=rootName, value=p .. " [" .. obj.ClassName .. "]" .. details, score=score
+                })
             end
         end
-        if inspected > 4500 then break end
     end
     table.sort(records, function(a,b)
         if a.score == b.score then return a.p < b.p end
@@ -384,11 +392,34 @@ local function snapshotOfGame(searchText)
     end
     table.insert(lines, "Selected objects, full paths:")
     local listed = 0
-    for _, record in ipairs(records) do
-        if listed >= 220 then break end
-        if #table.concat(lines, "\n") + #record.value > 10300 then break end
+    local selected = {}
+    local covered = {}
+    local function include(record)
+        if selected[record.p] or listed >= 220 then return end
+        if #table.concat(lines, "\n") + #record.value > 10200 then return end
         table.insert(lines, record.value)
+        selected[record.p] = true
         listed = listed + 1
+        covered[record.root] = (covered[record.root] or 0) + 1
+    end
+    -- First include highly relevant objects from any service.
+    for _, record in ipairs(records) do
+        if record.score >= 12 then include(record) end
+    end
+    -- Preserve a baseline from each service even for very large maps.
+    local quotas = {
+        Workspace=70, ServerScriptService=20, StarterGui=35,
+        StarterPlayer=15, ReplicatedStorage=20, ServerStorage=10, StarterPack=10
+    }
+    for _, record in ipairs(records) do
+        if (covered[record.root] or 0) < quotas[record.root] then
+            include(record)
+        end
+    end
+    -- Use remaining space for highest-scoring context.
+    for _, record in ipairs(records) do
+        include(record)
+        if listed >= 220 then break end
     end
     table.insert(lines, "Objects listed: " .. listed .. "; sampled " .. inspected ..
         ". Snapshot may be incomplete: check runtime before referring to unlisted objects.")
@@ -551,7 +582,8 @@ local function validatePlan(data)
         local mode = existing and (next(typed) and "UPDATE / REUSE" or "REUSE") or "CREATE"
         table.insert(preview, tostring(i) .. ". " .. mode .. " " .. path .. " [" .. step.className .. "]")
         for _, prop in ipairs(properties) do
-            table.insert(preview, "   " .. prop.name .. " = " .. prop.printed)
+            local before = existing and tostring(baseline[prop.name]) or "(new)"
+            table.insert(preview, "   " .. prop.name .. ": " .. before .. "  ->  " .. prop.printed)
         end
         if isScript(step.className) then
             table.insert(preview, "   FULL LUAU SOURCE (will be disabled):")
@@ -749,6 +781,10 @@ applyButton.MouseButton1Click:Connect(function()
     end)
     if ok and finishOK then
         previewTitle.Text = "Applied — inspect your new objects"
+        previewText.Text = "APPLIED PLAN\n\n" ..
+            plan.preview:gsub("AI PLAN — NOTHING HAS CHANGED", "REVIEWED CHANGES")
+                :gsub("Nothing changes until you click APPLY. Ctrl%+Z can undo the applied change.",
+                    "Changes were applied. Use Ctrl+Z to undo.")
         status.Text = "Applied: " .. #made .. " created, " .. changedCount ..
             " property assignments. " .. disabledScripts ..
             " Scripts disabled. Use Ctrl+Z to undo."
