@@ -524,6 +524,10 @@ end)
 
 -- Editing the prompt after preview always invalidates approval.
 prompt:GetPropertyChangedSignal("Text"):Connect(function()
+    scriptRequestIndex = scriptRequestIndex + 1 -- invalidate in-flight AI proposal if edited
+    if not pendingScript and scriptPreviewInfo.Text:find("Generating", 1, true) then
+        clearScriptProposal("Request edited. Generate a fresh script proposal.")
+    end
     if pending and prompt.Text ~= pending.original then
         clearProposal("Request changed. Prepare a new proposal before approving.")
     end
