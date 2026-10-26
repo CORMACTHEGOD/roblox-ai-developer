@@ -4,7 +4,7 @@ The Roblox Studio plugin now has **one natural-language request box**, **Prepare
 
 ## What Prepare actually does
 
-- Reads the currently open Roblox Studio game's **Explorer hierarchy locally** on every Prepare (up to 4,500 objects sampled).
+- Reads the currently open Roblox Studio game's **Explorer hierarchy locally** on every Prepare (up to about 5,200 objects sampled across the main services).
 - If the user has **explicitly opted in** to sharing game structure, sends up to 220 *selected* object paths/classes and limited properties (maximum 11,000 characters) to the Cloudflare Worker. **Never reads or uploads Script.Source.**
 - The Worker uses the OpenAI Responses API with a structured JSON schema at POST `/v1/prepare`. It asks for a **complete set of dependent changes**, including models/Parts, GUI elements, and scripts when necessary, even if the user only requested the final behavior.
 - If an existing suitable object is visible in the outline, the AI is instructed to reuse its exact path and propose only what is missing. A missing Part/GUI must be created **as part of the same proposal** as any scripts that use it.
