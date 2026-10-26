@@ -95,11 +95,15 @@ end
 
 local header = label(root, "Heading", "Orange Juice AI", 35, 23)
 header.Font = Enum.Font.GothamBold
-label(root, "Hint", "Describe what you want. Prepare checks your game and plans everything needed. Apply only after review.", 55, 13)
+header.LayoutOrder = 1
+local hint = label(root, "Hint", "Describe what you want. Prepare checks your game and plans everything needed. Apply only after review.", 55, 13)
+hint.LayoutOrder = 2
 
 local request = input(root, "Request", "Example: Make a working door with a model and a touch script", 124, true)
+request.LayoutOrder = 3
 local actionRow = Instance.new("Frame")
 actionRow.Name = "Actions"
+actionRow.LayoutOrder = 4
 actionRow.BackgroundTransparency = 1
 actionRow.Size = UDim2.new(1, 0, 0, 42)
 actionRow.Parent = root
@@ -110,14 +114,19 @@ actionLayout.SortOrder = Enum.SortOrder.LayoutOrder
 actionLayout.Parent = actionRow
 local prepareButton = button(actionRow, "Prepare", "Prepare", blue, 42)
 prepareButton.Size = UDim2.new(0.5, -4, 0, 42)
+prepareButton.LayoutOrder = 1
 local applyButton = button(actionRow, "Apply", "Apply", Color3.fromRGB(78, 84, 96), 42)
 applyButton.Size = UDim2.new(0.5, -4, 0, 42)
+applyButton.LayoutOrder = 2
 
 local status = label(root, "Status", "Ready. Configure connection and game-context consent below.", 52, 13)
+status.LayoutOrder = 5
 local previewTitle = label(root, "PreviewHeading", "Proposal preview — no changes yet", 25, 15)
 previewTitle.Font = Enum.Font.GothamBold
+previewTitle.LayoutOrder = 6
 local previewFrame = Instance.new("ScrollingFrame")
 previewFrame.Name = "FullProposalPreview"
+previewFrame.LayoutOrder = 7
 previewFrame.Size = UDim2.new(1, 0, 0, 310)
 previewFrame.BackgroundColor3 = panel
 previewFrame.BorderSizePixel = 0
@@ -147,8 +156,10 @@ previewText.Parent = previewFrame
 
 local setupButton = button(root, "SettingsToggle", "Connection & privacy settings", Color3.fromRGB(58, 65, 78), 32)
 setupButton.TextSize = 12
+setupButton.LayoutOrder = 8
 local setupFrame = Instance.new("Frame")
 setupFrame.Name = "Settings"
+setupFrame.LayoutOrder = 9
 setupFrame.BackgroundTransparency = 1
 setupFrame.Size = UDim2.new(1, 0, 0, 160)
 setupFrame.AutomaticSize = Enum.AutomaticSize.Y
