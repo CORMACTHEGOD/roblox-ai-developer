@@ -781,10 +781,14 @@ applyButton.MouseButton1Click:Connect(function()
     end)
     if ok and finishOK then
         previewTitle.Text = "Applied — inspect your new objects"
-        previewText.Text = "APPLIED PLAN\n\n" ..
-            plan.preview:gsub("AI PLAN — NOTHING HAS CHANGED", "REVIEWED CHANGES")
-                :gsub("Nothing changes until you click APPLY. Ctrl%+Z can undo the applied change.",
-                    "Changes were applied. Use Ctrl+Z to undo.")
+        local appliedPreview = plan.preview:gsub(
+            "AI PLAN — NOTHING HAS CHANGED", "REVIEWED CHANGES"
+        )
+        appliedPreview = appliedPreview:gsub(
+            "Nothing changes until you click APPLY. Ctrl%+Z can undo the applied change.",
+            "Changes were applied. Use Ctrl+Z to undo."
+        )
+        previewText.Text = "APPLIED PLAN\n\n" .. appliedPreview
         status.Text = "Applied: " .. #made .. " created, " .. changedCount ..
             " property assignments. " .. disabledScripts ..
             " Scripts disabled. Use Ctrl+Z to undo."
