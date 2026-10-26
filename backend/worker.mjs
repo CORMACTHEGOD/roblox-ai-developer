@@ -6,6 +6,8 @@ const ALLOWED_MODELS = new Set(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"]);
 const MAX_PROMPT_LENGTH = 3000;
 const MAX_OUTLINE_LENGTH = 6000;
 const MAX_REQUEST_BYTES = 16000;
+const MAX_SCRIPT_LENGTH = 9000;
+
 
 function reply(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -17,6 +19,33 @@ function reply(body, status = 200) {
     }
   });
 }
+
+const scriptProposalInstructions = `You create a single Roblox Luau Script proposal.
+Return ONLY a JSON object with exactly two fields: name and code, matching the required schema.
+The Script will be placed inside ServerScriptService, so do not assume script.Parent is a Part.
+Use game services and existing objects by explicit paths only when the user has described them.
+Do not invent assets, services, or object names. If needed objects were not supplied, prefer safe runtime checks rather than fictional paths.
+Never include secrets, external network requests, remote code loading, or instructions to bypass permissions.
+Prefer short, self-contained, directly runnable code.
+The "code" field must contain ONLY executable Luau source. Do NOT add introductory comments, explanatory comments, assumptions, tutorial text, installation instructions, descriptions of what the script does, or approval instructions. Specifically never add comments about the Script being disabled or awaiting review.
+No markdown fences or explanations outside the required JSON structure. Include Luau comments only when strictly necessary for correct behavior (not as a tutorial).
+The user MUST review and approve the full Luau source before it is inserted, and it is inserted DISABLED.
+Your response does not modify any project.`;
+
+const scriptProposalFormat = {
+  type: "json_schema",
+  name: "roblox_script_proposal",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      code: { type: "string" }
+    },
+    required: ["name", "code"],
+    additionalProperties: false
+  }
+};
 
 const instructions = `You are Roblox AI Developer, an AI planning assistant for Roblox Studio.
 Give useful, accurate, age-appropriate Luau advice for the user's Roblox development question.
@@ -35,7 +64,8 @@ export default {
     if (request.method === "GET" && path === "/health") {
       return reply({ status: "ok", service: "roblox-ai-developer-ai-bridge", mode: "private-beta" });
     }
-    if (path !== "/v1/plan") return reply({ error: "Not found" }, 404);
+    const scriptMode = path === "/v1/propose-script";
+    if (path !== "/v1/plan" && !scriptMode) return reply({ error: "Not found" }, 404);
     if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405);
     if (!env.OPENAI_API_KEY || !env.CLIENT_TOKEN) {
       return reply({ error: "Backend is not configured by the operator" }, 503);
@@ -85,10 +115,11 @@ export default {
         },
         body: JSON.stringify({
           model,
-          instructions,
+          instructions: scriptMode ? scriptProposalInstructions : instructions,
           input,
+          ...(scriptMode ? { text: { format: scriptProposalFormat } } : {}),
           store: false,
-          max_output_tokens: 1600
+          max_output_tokens: scriptMode ? 3600 : 1600
         }),
         signal: AbortSignal.timeout(30000)
       });
@@ -113,6 +144,23 @@ export default {
       for (const content of item.content) {
         if (content?.type === "output_text" && typeof content.text === "string") segments.push(content.text);
       }
+    }
+    if (scriptMode) {
+      let parsed;
+      try {
+        parsed = JSON.parse(segments.join("").trim());
+      } catch {
+        return reply({ error: "AI did not return a valid script proposal; try again" }, 502);
+      }
+      const name = parsed?.name;
+      const code = parsed?.code;
+      // This is an untrusted proposal. The Studio plugin validates again and
+      // can only insert one disabled Script after a separate approval click.
+      if (typeof name !== "string" || !/^[a-zA-Z][a-zA-Z0-9_ ]{0,49}$/.test(name) ||
+          typeof code !== "string" || !code.trim() || code.length > MAX_SCRIPT_LENGTH) {
+        return reply({ error: "AI returned an invalid or oversized script proposal" }, 502);
+      }
+      return reply({ proposal: { name, service: "ServerScriptService", code }, applied: false });
     }
     let suggestion = segments.join("\n\n").trim();
     if (!suggestion) return reply({ error: "AI returned no text; try again" }, 502);

@@ -53,3 +53,69 @@ test('bridges to OpenAI securely and only returns a suggestion', async (t) => {
   assert.equal(body.applied, false);
   assert.ok(!JSON.stringify(body).includes(env.OPENAI_API_KEY));
 });
+
+test('script proposal endpoint is private and rejects unsupported models', async () => {
+  const body = { prompt: 'Create a welcome Script', model: 'gpt-6-luna' };
+  const unauthorized = new Request(origin + '/v1/propose-script', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer wrong' },
+    body: JSON.stringify(body)
+  });
+  assert.equal((await worker.fetch(unauthorized, env)).status, 401);
+  const bad = new Request(origin + '/v1/propose-script', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env.CLIENT_TOKEN },
+    body: JSON.stringify({ ...body, model: 'unknown' })
+  });
+  assert.equal((await worker.fetch(bad, env)).status, 400);
+});
+
+test('script proposal returns validated code without applying it', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.openai.com/v1/responses');
+    const sent = JSON.parse(options.body);
+    assert.equal(sent.text.format.type, 'json_schema');
+    assert.equal(sent.text.format.strict, true);
+    assert.equal(sent.store, false);
+    return new Response(JSON.stringify({
+      output: [{ type: 'message', content: [{ type: 'output_text',
+        text: JSON.stringify({ name: 'WelcomeScript', code: 'print("Hello, Roblox!")' })
+      }] }]
+    }), { status: 200 });
+  };
+  const r = await worker.fetch(new Request(origin + '/v1/propose-script', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env.CLIENT_TOKEN },
+    body: JSON.stringify({ model: 'gpt-6-luna', prompt: 'Create a welcome Script' })
+  }), env);
+  const body = await r.json();
+  assert.equal(r.status, 200);
+  assert.equal(body.proposal.name, 'WelcomeScript');
+  assert.equal(body.proposal.service, 'ServerScriptService');
+  assert.equal(body.proposal.code, 'print("Hello, Roblox!")');
+  assert.equal(body.applied, false);
+  assert.ok(!JSON.stringify(body).includes(env.OPENAI_API_KEY));
+});
+
+test('script proposal rejects malformed or oversized AI outputs', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  for (const raw of [
+    '{not-json',
+    JSON.stringify({ name: 'Invalid/Name', code: 'print(1)' }),
+    JSON.stringify({ name: 'Okay', code: 'x'.repeat(9001) }),
+    JSON.stringify({ name: 'Okay', code: '' })
+  ]) {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      output: [{ type: 'message', content: [{ type: 'output_text', text: raw }] }]
+    }), { status: 200 });
+    const r = await worker.fetch(new Request(origin + '/v1/propose-script', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env.CLIENT_TOKEN },
+      body: JSON.stringify({ model: 'gpt-6-luna', prompt: 'Create a welcome Script' })
+    }), env);
+    assert.equal(r.status, 502);
+  }
+});
