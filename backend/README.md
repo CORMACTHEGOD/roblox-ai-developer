@@ -1,6 +1,6 @@
 # Roblox AI Developer — private-beta AI backend
 
-This Cloudflare Worker lets Roblox Studio send prompts to OpenAI's Responses API and receive **text-only suggestions**. AI answers **do not modify your game**.
+This Cloudflare Worker lets Roblox Studio request text suggestions and **structured Script proposals** from OpenAI's Responses API. AI calls **never modify your game automatically**. The plugin can create one **disabled** Script in ServerScriptService only after its complete source is reviewed and the user explicitly approves.
 
 ## IMPORTANT: private testing only
 
@@ -15,10 +15,17 @@ This prototype uses a **single private client token**, not public accounts. **Do
    - `CLIENT_TOKEN` — a **different** long random private test token, used only to authenticate this private beta plugin.
 4. Visit `https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev/health` in a browser; it should return JSON with `status: "ok"`. This test does not prove the AI credentials are working.
 5. In the plugin enter the full HTTPS Worker URL, and paste the private test token into the Session Token field, then press Enter. The plugin clears the token field after loading it into memory for this Studio session. Don't share this token or enter an OpenAI API key in the plugin.
-6. Type your request in the existing prompt textbox and click **Ask AI (Suggestion Only)**. A Roblox Studio permission dialog may ask to allow the plugin to contact your Worker.
-7. **Share Game Outline** is OFF by default. If enabled, the plugin sends a limited list of object names and classes. No script source is collected or transmitted.
+6. Type your request in the prompt textbox and click **Ask AI (Suggestion Only)** for read-only advice. A Roblox Studio permission dialog may ask to allow the plugin to contact your Worker.
+7. For code creation, click **Generate Script Proposal (AI)**, read the proposed Script name, location and **full source**, then choose **Approve & Insert Disabled Script** or **Discard Script Proposal**. The new Script is inserted under **ServerScriptService**, disabled; inspect its source and test safely before enabling it. Ctrl+Z undoes the insertion.
+8. **Share Game Outline** is OFF by default. If enabled, the plugin sends a limited list of object names and classes. No script source is collected or transmitted.
 
-If the AI returns an answer, the plugin displays it in a scrollable panel but cannot apply it. The existing manually approved **Create folder...** command still works independently. The exact Worker URL and secret values are **not present in this repo**.
+The Worker exposes two authenticated POST endpoints:
+- `/v1/plan` returns a text-only suggestion.
+- `/v1/propose-script` returns a validated JSON proposal with a Script name, `ServerScriptService` location and Luau source. It never applies changes. The plugin can only insert that code after a distinct approval click, and it inserts the Script disabled.
+
+The existing manually approved **Create folder...** command still works independently. The exact Worker URL and secret values are **not present in this repo**.
+
+**Security limitations:** Generated Luau is untrusted and can contain bugs or malicious behavior. No automated code analyzer or security guarantee is provided. Never approve code you don't understand; inspect it before enabling. No files are overwritten, and scripts are not enabled automatically. Use Roblox Studio Undo to revert. Do not distribute the shared `CLIENT_TOKEN` or publicize this private beta; only an eligible account operator should manage cloud accounts and approve API spending.
 
 ## Supported models
 
