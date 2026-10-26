@@ -1,42 +1,48 @@
-# Roblox AI Developer — private-beta AI backend
+# Orange Juice AI v0.7 — unified Prepare / Apply (private beta)
 
-This Cloudflare Worker lets Roblox Studio request text suggestions and **structured Script proposals** from OpenAI's Responses API. AI calls **never modify your game automatically**. The plugin can create one **disabled** Script in ServerScriptService only after its complete source is reviewed and the user explicitly approves.
+The Roblox Studio plugin now has **one natural-language request box**, **Prepare**, a complete **review preview**, and **Apply**.
 
-## IMPORTANT: private testing only
+## What Prepare actually does
 
-This prototype uses a **single private client token**, not public accounts. **Do not release this backend publicly or distribute its token.** Other users would otherwise be able to spend the backend owner's API budget. Real public launch requires identity-based sign-in, quotas, abuse protection, monitoring, spending limits, and age-appropriate privacy and safety controls.
+- Reads the currently open Roblox Studio game's **Explorer hierarchy locally** on every Prepare (up to 4,500 objects sampled).
+- If the user has **explicitly opted in** to sharing game structure, sends up to 220 *selected* object paths/classes and limited properties (maximum 11,000 characters) to the Cloudflare Worker. **Never reads or uploads Script.Source.**
+- The Worker uses the OpenAI Responses API with a structured JSON schema at POST `/v1/prepare`. It asks for a **complete set of dependent changes**, including models/Parts, GUI elements, and scripts when necessary, even if the user only requested the final behavior.
+- If an existing suitable object is visible in the outline, the AI is instructed to reuse its exact path and propose only what is missing. A missing Part/GUI must be created **as part of the same proposal** as any scripts that use it.
+- The plugin verifies all paths and supported properties against the **live game**, rejecting collisions and missing parents, then displays every action and the **full code** of proposed scripts.
+- **Nothing changes** until the user presses Apply. Apply rechecks for edits since Prepare and uses a Roblox Studio Undo recording; on a failure it attempts to roll back.
 
-## Connect when an eligible adult can manage account setup and billing
+## Supported in the first unified version
 
-1. The account operator creates an OpenAI API project/key and a Cloudflare Worker, under each provider's terms. ChatGPT Plus **does not** include API credits.
-2. In the Cloudflare Workers & Pages dashboard, create a new Worker; paste `backend/worker.mjs` into the Worker editor, and deploy.
-3. In the Worker's **Settings → Variables and Secrets**, add two variables using the **Secret** type:
-   - `OPENAI_API_KEY` — the operator's paid OpenAI API key.
-   - `CLIENT_TOKEN` — a **different** long random private test token, used only to authenticate this private beta plugin.
-4. Visit `https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev/health` in a browser; it should return JSON with `status: "ok"`. This test does not prove the AI credentials are working.
-5. In the plugin enter the full HTTPS Worker URL, and paste the private test token into the Session Token field, then press Enter. The plugin clears the token field after loading it into memory for this Studio session. Don't share this token or enter an OpenAI API key in the plugin.
-6. Type your request in the prompt textbox and click **Ask AI (Suggestion Only)** for read-only advice. A Roblox Studio permission dialog may ask to allow the plugin to contact your Worker.
-7. For code creation, click **Generate Script Proposal (AI)**, read the proposed Script name, location and **full source**, then choose **Approve & Insert Disabled Script** or **Discard Script Proposal**. The new Script is inserted under **ServerScriptService**, disabled; inspect its source and test safely before enabling it. Ctrl+Z undoes the insertion.
-8. **Share Game Outline** is OFF by default. If enabled, the plugin sends a limited list of object names and classes. No script source is collected or transmitted.
+- **3D:** Folder, Model, Part, WedgePart, SpawnLocation
+- **UI:** ScreenGui, Frame, TextLabel, TextButton, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding
+- **Interactions:** ProximityPrompt, ClickDetector
+- **Code:** Script, LocalScript, ModuleScript
 
-The Worker exposes two authenticated POST endpoints:
-- `/v1/plan` returns a text-only suggestion.
-- `/v1/propose-script` returns a validated JSON proposal with a Script name, `ServerScriptService` location and Luau source. It never applies changes. The plugin can only insert that code after a distinct approval click, and it inserts the Script disabled.
+The AI can propose multiple objects **together in one approval**, for example:
+- “Create a door that changes color when touched.” → reuse or create a Door Part, plus a Script inside it.
+- “Make a shop UI with a close button.” → ScreenGui, Frame, labels/buttons and LocalScript with click handling.
+- “Add a checkpoint.” → a checkpoint Part and Script, if they do not already exist.
 
-The existing manually approved **Create folder...** command still works independently. The exact Worker URL and secret values are **not present in this repo**.
+Only approved property names/types are writable; unsupported properties or ClassNames are rejected. **Existing script source is NEVER overwritten.** This version does not support MeshParts, custom uploaded assets, animations, Terrain or destructive edits.
 
-**Security limitations:** Generated Luau is untrusted and can contain bugs or malicious behavior. No automated code analyzer or security guarantee is provided. Never approve code you don't understand; inspect it before enabling. No files are overwritten, and scripts are not enabled automatically. Use Roblox Studio Undo to revert. Do not distribute the shared `CLIENT_TOKEN` or publicize this private beta; only an eligible account operator should manage cloud accounts and approve API spending.
+Approved Scripts/LocalScripts start **disabled** for safety. ModuleScripts do not execute until required. The user should inspect generated code and test it in Studio before enabling scripts. Thus Apply stages the functionality; code is not automatically run.
 
-## Supported models
+## Setup and upgrades
 
-The bridge currently accepts `gpt-6-luna`, `gpt-6.1-sol`, and `gpt-6-astra`. All require OpenAI API billing and are subject to account access, model limits, and costs.
+1. Have an eligible adult manage OpenAI API access, billing, and the Cloudflare account. API charges are separate from ChatGPT Plus.
+2. Deploy **the new `backend/worker.mjs`** in your existing Cloudflare Worker. Retain your secure existing `OPENAI_API_KEY` and `CLIENT_TOKEN` secrets. No new keys are needed.
+3. Replace your local `%LOCALAPPDATA%\Roblox\Plugins\RobloxAIDeveloper.lua` with the plugin's **v0.7 code**; reload Roblox Studio.
+4. In the plugin's **Connection & privacy settings**, enter the same HTTPS Worker URL. Load `CLIENT_TOKEN` into the session token box and press Enter. Token is not stored permanently.
+5. If you want the AI to know what's already in the game, explicitly switch **Share game structure with AI: ON**. This permission persists as a plugin setting until switched off.
+6. Type one request, press **Prepare**, review the list and any generated Luau, then press **Apply** only if the whole plan is appropriate.
+7. Apply cannot publish the game or execute generated code automatically; use Explorer to inspect results and enable scripts deliberately after safe testing.
 
-Gemini has deliberately not been enabled: its March 2026 terms require API users to be 18+ and restrict API clients likely to be accessed by under-18 users, making it unsuitable for our planned broadly available Roblox developer plugin.
+## Security and limitations
 
-## Testing
+This is a single-operator private beta; the shared CLIENT_TOKEN is **not appropriate for a public plugin**. Never put it or OPENAI_API_KEY in a public Roblox plugin or GitHub repository. Public release requires proper user authentication, server rate limiting, quotas, per-user budgets, privacy disclosures and protections.
 
-Run `node --test backend/worker.test.mjs` in the project root (Node.js 20+). All tests use mocked AI responses and cost nothing. A real AI response cannot be tested until the operator configures and deploys the Worker.
+Game context is opt-in and limited. Because the snapshot can be truncated and never includes script source, the AI may miss an existing suitable object or propose unsuitable scripts. The plugin checks exact paths and class conflicts, but cannot establish semantic equivalence between differently named models or prove Luau safety. **The AI's code is untrusted.** Never blindly enable it.
 
-## Before public launch
+## Tests
 
-Replace the shared token with per-user authentication and backend authorization; add per-user request quotas, rate limiting, billing controls, audit logs (without sensitive prompts), content safeguards appropriate for young users, privacy/consent notices, and abuse reporting. The model must never apply Studio changes on its own.
+`node --test backend/worker.test.mjs` runs mocked tests (no API charges).
