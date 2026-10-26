@@ -11,9 +11,11 @@ const MAX_PLAN_STEPS = 24;
 const MAX_PLAN_SOURCE_LENGTH = 20000;
 const SUPPORTED_CLASSES = new Set([
   "Folder", "Model", "Part", "WedgePart", "SpawnLocation",
-  "ScreenGui", "Frame", "TextLabel", "TextButton", "ImageLabel",
+  "ScreenGui", "Frame", "TextLabel", "TextButton", "TextBox", "ImageLabel",
   "UICorner", "UIStroke", "UIListLayout", "UIPadding",
-  "ProximityPrompt", "ClickDetector", "Script", "LocalScript", "ModuleScript"
+  "ProximityPrompt", "ClickDetector", "RemoteEvent", "RemoteFunction",
+  "IntValue", "NumberValue", "BoolValue", "StringValue",
+  "Script", "LocalScript", "ModuleScript"
 ]);
 const SAFE_ROOTS = new Set([
   "Workspace", "ReplicatedStorage", "ServerStorage",
@@ -27,13 +29,13 @@ Study the current GAME OUTLINE carefully (hierarchy names, classes and selected 
 If a required object is ABSENT, propose creating it AND all dependent objects and scripts as a coordinated set. Do not assume the user pre-created something when it isn't shown in the outline. If the outline is incomplete, create a safely named item or make a runtime existence check.
 Plan ordered steps, parent BEFORE child. Every step has EXACT absolute slash-separated path, className, properties [{name,value}], and source string.
 Root must be one of Workspace, ReplicatedStorage, ServerStorage, ServerScriptService, StarterGui, StarterPack, StarterPlayer.
-Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, Script, LocalScript, ModuleScript.
+Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue, Script, LocalScript, ModuleScript.
 At most 24 steps. For an existing object, propose its existing path with the same ClassName and only properties to change, or omit it entirely if no changes are needed.
 Scripts must have source. Prefer Script in ServerScriptService or inside a Workspace model/part, LocalScript inside StarterGui's GUI tree or StarterPlayer/StarterPlayerScripts. Never assume LocalScript runs when parented directly to Workspace.
-Avoid referencing objects or remotes that aren't in the existing outline OR created by the steps. If a needed RemoteEvent is unavailable, don't invent references to it; instead use self-contained server and local behavior within supported classes.
+Avoid referencing objects or remotes that aren't in the existing outline OR created by the steps. If a RemoteEvent is needed for client/server communication and absent, PROPOSE CREATING it in ReplicatedStorage and the corresponding client and server handlers. For shared state you may create IntValue/NumberValue/BoolValue/StringValue and set Value.
 For scripts, put executable Luau only in source, with no introductory/tutorial/approval comments. Source MUST be empty for non-script objects.
 All property values are STRINGS. UDim is "scale,offset". RGB colors are "r,g,b" in 0-255 integers. Vector3 is "x,y,z". UDim2 is "scaleX,offsetX,scaleY,offsetY". Vector2 is "x,y". Use true/false for booleans and standard names for materials and fonts.
-Valid properties: Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape for parts; Size, Position, AnchorPoint, BackgroundColor3, BackgroundTransparency, Text, TextColor3, TextSize, TextWrapped, Visible, ZIndex, Font for GuiObjects; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness and Color for UIStroke; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt. Only use properties actually supported by the chosen ClassName.
+Valid properties: Value for value objects; Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape for parts; Size, Position, AnchorPoint, BackgroundColor3, BackgroundTransparency, Text, TextColor3, TextSize, TextWrapped, Visible, ZIndex, Font for GuiObjects; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness and Color for UIStroke; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt. Only use properties actually supported by the chosen ClassName.
 No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting scripts, no unsafe code, no external HTTP/asset loading or external code execution.
 Provide a concise summary of the WHOLE change, not an essay. Approval happens separately in Studio, and inserted scripts start disabled.
 Example if asked "create a door that changes color when touched": propose Workspace/Door Part with Anchored true, Size, Position, Color, AND Workspace/Door/TouchHandler Script with functioning Touched event code. If Workspace/Door already appears as a Part, reuse it and only add the missing child Script.
