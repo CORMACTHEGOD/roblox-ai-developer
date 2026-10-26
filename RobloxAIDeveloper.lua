@@ -1,6 +1,6 @@
 -- Roblox AI Developer
--- v0.5: opt-in AI suggestion bridge, nested inspector, and approval-gated local actions.
--- This plugin never uploads game contents or runs generated scripts.
+-- v0.6: adds AI script proposals, complete preview, explicit approval and Undo.
+-- Generated Script instances are created DISABLED; the plugin never runs their code.
 
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local HttpService = game:GetService("HttpService")
@@ -79,7 +79,7 @@ title.Font = Enum.Font.GothamBold
 
 makeLabel(
     "Description",
-    "Inspect actual objects and locations, then preview an exact change for approval. AI is not connected yet.",
+    "Inspect the game, ask AI for suggestions, or review a generated script before creating it disabled.",
     48, 14
 )
 
@@ -135,7 +135,7 @@ refreshModelDisplay()
 -- or OpenAI API keys are embedded in the plugin or stored in Plugin Settings.
 local aiTitle = makeLabel("AiBridgeTitle", "AI Bridge (Private Beta)", 23, 15)
 aiTitle.Font = Enum.Font.GothamBold
-makeLabel("AiNotice", "Ask AI for suggestions. No AI answers are applied automatically. Only send game object names if you opt in.", 48, 13)
+makeLabel("AiNotice", "Ask AI for suggestions or request a Script proposal. Script proposals require review and approval. Share object names only if you opt in.", 55, 13)
 
 local function makeInput(name, placeholder, height)
     local field = Instance.new("TextBox")
@@ -222,6 +222,59 @@ aiResultText.TextYAlignment = Enum.TextYAlignment.Top
 aiResultText.Text = "AI suggestions appear here. Nothing in this panel changes your game."
 aiResultText.Parent = aiResultFrame
 
+-- A separate, scrollable, full-source preview for AI-generated scripts.
+-- No edits are applied by generating or viewing a proposal.
+local generateScriptButton = makeButton(
+    "GenerateScript", "Generate Script Proposal (AI)", Color3.fromRGB(65, 105, 210)
+)
+local scriptPreviewTitle = makeLabel(
+    "ScriptPreviewTitle", "AI SCRIPT PROPOSAL - NOT APPLIED", 25, 15
+)
+scriptPreviewTitle.Font = Enum.Font.GothamBold
+local scriptPreviewInfo = makeLabel(
+    "ScriptPreviewInfo",
+    "No script proposed. AI output is untrusted: review ALL code before approving. " ..
+        "Approved scripts are created disabled in ServerScriptService.",
+    75, 13
+)
+local scriptPreviewFrame = Instance.new("ScrollingFrame")
+scriptPreviewFrame.Name = "ScriptSourcePreview"
+scriptPreviewFrame.Size = UDim2.new(1, 0, 0, 300)
+scriptPreviewFrame.BackgroundColor3 = Color3.fromRGB(37, 40, 49)
+scriptPreviewFrame.BorderSizePixel = 0
+scriptPreviewFrame.ScrollBarThickness = 7
+scriptPreviewFrame.CanvasSize = UDim2.fromOffset(0, 0)
+scriptPreviewFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scriptPreviewFrame.Parent = scroll
+
+local scriptPreviewPadding = Instance.new("UIPadding")
+scriptPreviewPadding.PaddingLeft = UDim.new(0, 8)
+scriptPreviewPadding.PaddingRight = UDim.new(0, 12)
+scriptPreviewPadding.PaddingTop = UDim.new(0, 8)
+scriptPreviewPadding.PaddingBottom = UDim.new(0, 8)
+scriptPreviewPadding.Parent = scriptPreviewFrame
+
+local scriptPreviewText = Instance.new("TextLabel")
+scriptPreviewText.Name = "CompleteScriptSource"
+scriptPreviewText.Size = UDim2.new(1, 0, 0, 0)
+scriptPreviewText.AutomaticSize = Enum.AutomaticSize.Y
+scriptPreviewText.BackgroundTransparency = 1
+scriptPreviewText.TextColor3 = Color3.fromRGB(220, 225, 235)
+scriptPreviewText.Font = Enum.Font.Code
+scriptPreviewText.TextSize = 13
+scriptPreviewText.TextWrapped = true
+scriptPreviewText.TextXAlignment = Enum.TextXAlignment.Left
+scriptPreviewText.TextYAlignment = Enum.TextYAlignment.Top
+scriptPreviewText.Text = "No script code to review yet."
+scriptPreviewText.Parent = scriptPreviewFrame
+
+local approveScriptButton = makeButton(
+    "ApproveGeneratedScript", "Approve & Insert Disabled Script", Color3.fromRGB(45, 145, 90)
+)
+local discardScriptButton = makeButton(
+    "DiscardGeneratedScript", "Discard Script Proposal", Color3.fromRGB(105, 65, 65)
+)
+
 local inspectButton = makeButton("InspectGame", "Inspect Game (Read Only)", Color3.fromRGB(74, 79, 95))
 
 -- The inspector has its own scroll area so large trees are still readable.
@@ -293,6 +346,8 @@ local allowedParents = {
 }
 
 local pending = nil
+local pendingScript = nil
+local scriptRequestIndex = 0
 
 local function trim(value)
     return value:match("^%s*(.-)%s*$")
@@ -302,6 +357,13 @@ local function clearProposal(reason)
     pending = nil
     proposal.Text = reason
     status.Text = "Status: No change is awaiting approval."
+end
+
+local function clearScriptProposal(reason)
+    pendingScript = nil
+    scriptPreviewInfo.Text = reason
+    scriptPreviewText.Text = "No script is awaiting approval."
+    scriptPreviewFrame.CanvasPosition = Vector2.new(0, 0)
 end
 
 -- Walk the real Explorer hierarchy. No source code is read or transmitted.
@@ -464,6 +526,9 @@ end)
 prompt:GetPropertyChangedSignal("Text"):Connect(function()
     if pending and prompt.Text ~= pending.original then
         clearProposal("Request changed. Prepare a new proposal before approving.")
+    end
+    if pendingScript and prompt.Text ~= pendingScript.original then
+        clearScriptProposal("Request changed. Generate a fresh Script proposal.")
     end
 end)
 
@@ -638,8 +703,188 @@ askAIButton.MouseButton1Click:Connect(function()
     end)
 end)
 
+
+-- Script creation is a separate user-controlled, two-step operation:
+-- generate complete code for review, then click Approve to create ONE disabled Script.
+-- It intentionally cannot overwrite files, edit live scripts, or run code.
+local function getBackendSettings()
+    local url = trim(backendUrlInput.Text):gsub("/+$", "")
+    if not url:match("^https://[%w%.%-]+$") then
+        return nil, "Enter your HTTPS backend URL first."
+    end
+    if not sessionToken or sessionToken == "" then
+        return nil, "Enter the private test token, then press Enter."
+    end
+    return url, nil
+end
+
+generateScriptButton.MouseButton1Click:Connect(function()
+    local request = trim(prompt.Text)
+    scriptRequestIndex = scriptRequestIndex + 1
+    local index = scriptRequestIndex
+    clearScriptProposal("No script proposed.")
+    if request == "" or #request > 3000 then
+        scriptPreviewInfo.Text = "Enter a request of 1-3000 characters in the request box."
+        return
+    end
+
+    local url, configError = getBackendSettings()
+    if not url then
+        scriptPreviewInfo.Text = configError
+        return
+    end
+
+    local original = prompt.Text
+    local chosenModel = modelOptions[modelIndex].id
+    local payload = { prompt = request, model = chosenModel }
+    if shareOutline then
+        payload.gameOutline = buildGameOutline()
+    end
+    scriptPreviewInfo.Text = "Generating proposed code... No game changes made."
+    scriptPreviewText.Text = "Contacting AI backend..."
+    status.Text = "Status: Generating AI Script proposal. No changes made."
+
+    task.spawn(function()
+        local success, response = pcall(function()
+            return HttpService:RequestAsync({
+                Url = url .. "/v1/propose-script",
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. sessionToken
+                },
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+        if scriptRequestIndex ~= index then
+            return
+        end
+        if prompt.Text ~= original or modelOptions[modelIndex].id ~= chosenModel then
+            clearScriptProposal("Request or model changed. Generate a fresh script proposal.")
+            return
+        end
+        if not success then
+            clearScriptProposal("Network error. Check plugin HTTP permission and your Worker URL.")
+            return
+        end
+        local decodedOK, data = pcall(function()
+            return HttpService:JSONDecode(response.Body)
+        end)
+        if not response.Success then
+            local reason = decodedOK and type(data) == "table" and data.error
+            clearScriptProposal("AI error: " .. tostring(reason or response.StatusCode))
+            return
+        end
+        local item = decodedOK and type(data) == "table" and data.proposal
+        if type(item) ~= "table" or item.service ~= "ServerScriptService" or
+            type(item.name) ~= "string" or #item.name > 50 or
+            not item.name:match("^[%a][%w_ ]*$") or
+            type(item.code) ~= "string" or #item.code == 0 or
+            #item.code > 9000 or not item.code:match("%S") then
+            clearScriptProposal("Invalid script proposal received. Nothing changed.")
+            return
+        end
+        local parent = game:GetService("ServerScriptService")
+        if parent:FindFirstChild(item.name) then
+            clearScriptProposal("A child named '" .. item.name ..
+                "' already exists in ServerScriptService. Request a different script name.")
+            return
+        end
+
+        pendingScript = {
+            original = original,
+            model = chosenModel,
+            name = item.name,
+            code = item.code
+        }
+        scriptPreviewInfo.Text =
+            "ACTION: Create one DISABLED Script\n" ..
+            "NAME: " .. item.name .. "\n" ..
+            "LOCATION: ServerScriptService\n" ..
+            "Review the ENTIRE Luau code below. It may contain mistakes or unsafe behavior."
+        scriptPreviewText.Text = item.code
+        scriptPreviewFrame.CanvasPosition = Vector2.new(0, 0)
+        status.Text = "Status: AI Script ready for review. No changes made."
+    end)
+end)
+
+discardScriptButton.MouseButton1Click:Connect(function()
+    scriptRequestIndex = scriptRequestIndex + 1
+    clearScriptProposal("Script proposal discarded. Nothing was inserted.")
+    status.Text = "Status: Script proposal discarded. Nothing changed."
+end)
+
+approveScriptButton.MouseButton1Click:Connect(function()
+    if not pendingScript then
+        status.Text = "Status: No AI Script to approve. Generate a proposal first."
+        return
+    end
+
+    local approved = pendingScript
+    clearScriptProposal("Approval received. Attempting to create disabled script...")
+    scriptRequestIndex = scriptRequestIndex + 1
+
+    if prompt.Text ~= approved.original or
+        modelOptions[modelIndex].id ~= approved.model then
+        scriptPreviewInfo.Text = "Request or model changed. Generate a fresh proposal."
+        return
+    end
+    local parent = game:GetService("ServerScriptService")
+    if parent:FindFirstChild(approved.name) then
+        scriptPreviewInfo.Text = "Name already exists. Nothing was inserted."
+        return
+    end
+
+    local recordingOK, recording = pcall(function()
+        return ChangeHistoryService:TryBeginRecording("OrangeJuiceAI_CreateDisabledScript")
+    end)
+    if not recordingOK or not recording then
+        scriptPreviewInfo.Text = "Unable to start an Undo recording. Nothing was inserted."
+        return
+    end
+
+    local createdScript = nil
+    local ok, err = pcall(function()
+        createdScript = Instance.new("Script")
+        createdScript.Enabled = false
+        createdScript.Name = approved.name
+        createdScript.Source = approved.code
+        createdScript.Parent = parent
+    end)
+    if not ok and createdScript then
+        pcall(function()
+            createdScript:Destroy()
+        end)
+    end
+    ChangeHistoryService:FinishRecording(
+        recording,
+        ok and Enum.FinishRecordingOperation.Commit
+            or Enum.FinishRecordingOperation.Cancel
+    )
+
+    if ok then
+        scriptPreviewInfo.Text =
+            "CREATED: ServerScriptService." .. approved.name ..
+            "\nSTATE: DISABLED. Inspect Source before manually enabling it in Studio." ..
+            "\nUse Ctrl+Z to undo the insertion."
+        scriptPreviewText.Text = approved.code
+        status.Text = "Status: One disabled Script inserted after approval. Undo: Ctrl+Z."
+    else
+        scriptPreviewInfo.Text = "Could not insert the script: " .. tostring(err)
+        status.Text = "Status: Script insertion failed. No code was enabled."
+    end
+end)
+
+-- Model changes also invalidate any pending approval or in-flight proposal.
+modelButton.MouseButton1Click:Connect(function()
+    scriptRequestIndex = scriptRequestIndex + 1
+    if pendingScript then
+        clearScriptProposal("Model changed. Generate a fresh proposal.")
+    end
+end)
+
 openButton.Click:Connect(function()
     widget.Enabled = not widget.Enabled
 end)
 
-print("Roblox AI Developer v0.5 loaded (private-beta AI suggestion bridge; local approvals).")
+print("Roblox AI Developer v0.6 loaded (AI script proposals require explicit approval; inserted disabled).")
