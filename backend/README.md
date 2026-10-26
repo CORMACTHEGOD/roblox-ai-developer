@@ -14,13 +14,14 @@ The Roblox Studio plugin now has **one natural-language request box**, **Prepare
 ## Supported in the first unified version
 
 - **3D:** Folder, Model, Part, WedgePart, SpawnLocation
-- **UI:** ScreenGui, Frame, TextLabel, TextButton, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding
-- **Interactions:** ProximityPrompt, ClickDetector
+- **UI:** ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding
+- **Interactions and data:** ProximityPrompt, ClickDetector, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue
 - **Code:** Script, LocalScript, ModuleScript
 
 The AI can propose multiple objects **together in one approval**, for example:
 - “Create a door that changes color when touched.” → reuse or create a Door Part, plus a Script inside it.
 - “Make a shop UI with a close button.” → ScreenGui, Frame, labels/buttons and LocalScript with click handling.
+- “Make a shop purchase button that contacts the server.” → GUI, LocalScript, RemoteEvent and server Script.
 - “Add a checkpoint.” → a checkpoint Part and Script, if they do not already exist.
 
 Only approved property names/types are writable; unsupported properties or ClassNames are rejected. **Existing script source is NEVER overwritten.** This version does not support MeshParts, custom uploaded assets, animations, Terrain or destructive edits.
