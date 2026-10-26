@@ -275,9 +275,11 @@ local rootList = {
 local allowedClass = {
     Folder = true, Model = true, Part = true, WedgePart = true,
     SpawnLocation = true, ScreenGui = true, Frame = true,
-    TextLabel = true, TextButton = true, ImageLabel = true,
+    TextLabel = true, TextButton = true, TextBox = true, ImageLabel = true,
     UICorner = true, UIStroke = true, UIListLayout = true,
     UIPadding = true, ProximityPrompt = true, ClickDetector = true,
+    RemoteEvent = true, RemoteFunction = true,
+    IntValue = true, NumberValue = true, BoolValue = true, StringValue = true,
     Script = true, LocalScript = true, ModuleScript = true
 }
 local allowedProperty = {
@@ -297,7 +299,8 @@ local allowedProperty = {
     UIPadding = { PaddingTop=true, PaddingLeft=true, PaddingRight=true, PaddingBottom=true },
     ProximityPrompt = {
         ActionText=true, ObjectText=true, HoldDuration=true, MaxActivationDistance=true
-    }
+    },
+    ValueObject = { Value=true }
 }
 local function safeProperty(instance, prop)
     local function inGroup(group)
@@ -305,7 +308,12 @@ local function safeProperty(instance, prop)
     end
     if instance:IsA("BasePart") and inGroup("BasePart") then return true end
     if instance:IsA("GuiObject") and inGroup("GuiObject") then return true end
-    if (instance:IsA("TextLabel") or instance:IsA("TextButton")) and inGroup("TextObject") then return true end
+    if (instance:IsA("TextLabel") or instance:IsA("TextButton") or
+        instance:IsA("TextBox")) and inGroup("TextObject") then return true end
+    if (instance:IsA("ValueBase") and
+        (instance:IsA("IntValue") or instance:IsA("NumberValue") or
+         instance:IsA("BoolValue") or instance:IsA("StringValue"))) and
+        inGroup("ValueObject") then return true end
     return inGroup(instance.ClassName) == true
 end
 
@@ -387,7 +395,7 @@ local function snapshotOfGame(searchText)
                 if obj:IsA("BasePart") then
                     local v = obj.Size
                     details = string.format(" size=(%.1f,%.1f,%.1f)", v.X,v.Y,v.Z)
-                elseif obj:IsA("TextLabel") or obj:IsA("TextButton") then
+                elseif obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
                     details = " text=" .. obj.Text:sub(1, 35):gsub("[%c]", " ")
                 end
                 table.insert(records, {
