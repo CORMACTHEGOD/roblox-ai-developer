@@ -303,7 +303,10 @@ local function components(path)
     local parts = string.split(path, "/")
     if #parts < 1 or #parts > 9 or not roots[parts[1]] then return nil end
     for _, p in ipairs(parts) do
-        if #p < 1 or #p > 50 or not p:match("^[%w_][%w_ %-]*$") then
+        -- Roblox object names may contain spaces, emojis and punctuation.
+        -- Slash is reserved as our path separator; reject control characters.
+        if #p < 1 or #p > 80 or p == "." or p == ".." or
+            not p:match("%S") or p:find("[%c/]") then
             return nil
         end
     end
