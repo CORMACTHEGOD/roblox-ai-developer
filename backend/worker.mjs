@@ -7,7 +7,7 @@ const MAX_PROMPT_LENGTH = 3000;
 const MAX_OUTLINE_LENGTH = 6000;
 const MAX_REQUEST_BYTES = 32000;
 const MAX_CONTEXT_LENGTH = 11000;
-const MAX_PLAN_STEPS = 24;
+const MAX_PLAN_STEPS = 48; // Keep in sync with RobloxAIDeveloper.lua
 const MAX_PLAN_SOURCE_LENGTH = 20000;
 const UNIFIED_PREPARE_TIMEOUT_MS = 45000; // bigger combined builds can take longer than short suggestions
 const SUPPORTED_CLASSES = new Set([
@@ -31,14 +31,14 @@ If a required object is ABSENT, propose creating it AND all dependent objects an
 Plan ordered steps, parent BEFORE child. Every step has EXACT absolute slash-separated path, className, properties [{name,value}], and source string.
 Root must be one of Workspace, ReplicatedStorage, ServerStorage, ServerScriptService, StarterGui, StarterPack, StarterPlayer.
 Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue, Script, LocalScript, ModuleScript.
-At most 24 steps. For an existing object, propose its existing path with the same ClassName and only properties to change, or omit it entirely if no changes are needed.
+Stay within 48 steps TOTAL. For ordinary menus, aim for 15-30 well-chosen objects rather than dozens of tiny decoration objects. If the design is too large, prioritize a self-contained, functional and polished subset; never leave dependencies dangling. For an existing object, propose its existing path with the same ClassName and only properties to change, or omit it entirely if no changes are needed.
 Scripts must have source. Prefer Script in ServerScriptService or inside a Workspace model/part, LocalScript inside StarterGui's GUI tree or StarterPlayer/StarterPlayerScripts. Never assume LocalScript runs when parented directly to Workspace.
 Avoid referencing objects or remotes that aren't in the existing outline OR created by the steps. If a RemoteEvent is needed for client/server communication and absent, PROPOSE CREATING it in ReplicatedStorage and the corresponding client and server handlers. For shared state you may create IntValue/NumberValue/BoolValue/StringValue and set Value.
 For scripts, put executable Luau only in source, with no introductory/tutorial/approval comments. Source MUST be empty for non-script objects.
 All property values are STRINGS. UDim is "scale,offset". RGB colors are "r,g,b" in 0-255 integers. Vector3 is "x,y,z". UDim2 is "scaleX,offsetX,scaleY,offsetY". Vector2 is "x,y". Use true/false for booleans and standard names for materials and fonts.
 Valid properties: Value for value objects; Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape for parts; Size, Position, AnchorPoint, BackgroundColor3, BackgroundTransparency, Text, TextColor3, TextSize, TextWrapped, Visible, ZIndex, Font for GuiObjects; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness and Color for UIStroke; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt. Only use properties actually supported by the chosen ClassName.
 No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting scripts, no unsafe code, no external HTTP/asset loading or external code execution.
-Provide a concise summary of the WHOLE change, not an essay. Approval happens separately in Studio, and inserted scripts start disabled.
+Provide a concise summary of the WHOLE change (ideally under 300 characters), not an essay. Avoid duplicating existing Parts and UIs. Approval happens separately in Studio, and inserted scripts start disabled.
 Example if asked "create a door that changes color when touched": propose Workspace/Door Part with Anchored true, Size, Position, Color, AND Workspace/Door/TouchHandler Script with functioning Touched event code. If Workspace/Door already appears as a Part, reuse it and only add the missing child Script.
 Example "shop UI": propose StarterGui/ShopGui ScreenGui, StarterGui/ShopGui/Panel Frame, labels/buttons AND a LocalScript attached to UI that makes buttons work when possible.
 For all GUI requests, use an ORIGINAL polished, modern, readable Roblox aesthetic, with a cohesive nonwhite palette, hierarchy, rounded panels (UICorner), legible contrast, consistent spacing, and working actions where possible. Avoid default plain white rectangle interfaces. Treat recent Roblox public chart metadata as signals about categories and themes, NOT evidence of how in-game UIs/models/scripts look.
@@ -357,7 +357,7 @@ export default {
           ...(unifiedMode ? { text: { format: unifiedFormat } }
             : scriptMode ? { text: { format: scriptProposalFormat } } : {}),
           store: false,
-          max_output_tokens: unifiedMode ? 7500 : scriptMode ? 3600 : 1600
+          max_output_tokens: unifiedMode ? 10000 : scriptMode ? 3600 : 1600
         }),
         signal: AbortSignal.timeout(unifiedMode ? UNIFIED_PREPARE_TIMEOUT_MS : 30000)
       });
@@ -395,10 +395,24 @@ export default {
       } catch {
         return reply({ error: "AI returned invalid structured plan; try a smaller request" }, 502);
       }
-      if (!plan || typeof plan.summary !== "string" || plan.summary.length > 700 ||
-          !Array.isArray(plan.steps) || plan.steps.length < 1 || plan.steps.length > MAX_PLAN_STEPS) {
-        return reply({ error: "AI returned an invalid plan size" }, 502);
+      if (!plan || typeof plan.summary !== "string" || !Array.isArray(plan.steps)) {
+        return reply({ error: "AI returned an incomplete plan. Nothing was changed.", kind: "invalid_plan_format" }, 502);
       }
+      if (plan.steps.length === 0) {
+        return reply({ error: "AI did not propose any objects. Nothing was changed.", kind: "empty_plan" }, 502);
+      }
+      if (plan.steps.length > MAX_PLAN_STEPS) {
+        return reply({
+          error: "AI proposed " + plan.steps.length + " objects; this version supports up to " +
+            MAX_PLAN_STEPS + " in one proposal. No changes made. Try a smaller feature.",
+          kind: "too_many_steps",
+          proposedSteps: plan.steps.length,
+          maxSteps: MAX_PLAN_STEPS
+        }, 502);
+      }
+      // A verbose summary is harmless, so shorten it rather than rejecting
+      // an otherwise usable collection of objects and scripts.
+      plan.summary = plan.summary.slice(0, 700);
       let totalSource = 0;
       const seen = new Set();
       for (const step of plan.steps) {
