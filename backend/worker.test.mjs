@@ -449,3 +449,102 @@ test('oversized and empty plans have clear non-destructive errors', async (t) =>
     assert.equal(result.plan,undefined);
   }
 });
+
+
+test('curated UI reference guidance is automatically selected for original shop, rebirth, admin and index requests', async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+  const examples = [
+    ['Create a stylish shop UI with working close button', 'SHOP PROFILE'],
+    ['Make a rebirth GUI', 'REBIRTH PROFILE'],
+    ['Build a working admin panel', 'ADMIN PROFILE'],
+    ['Create a collectible index screen', 'INDEX / COLLECTION PROFILE']
+  ];
+  for (const [prompt, profile] of examples) {
+    let checked = false;
+    globalThis.fetch = async (url, opts) => {
+      assert.equal(url,'https://api.openai.com/v1/responses');
+      const sent = JSON.parse(opts.body);
+      assert.ok(sent.instructions.includes('ORANGE JUICE UI DESIGN REFERENCE V1'));
+      assert.ok(sent.instructions.includes(profile), 'Missing selected profile: ' + profile);
+      assert.ok(sent.instructions.includes('ORIGINAL'));
+      checked = true;
+      return new Response(JSON.stringify({output:[{
+        type:'message',content:[{
+          type:'output_text',text:JSON.stringify({
+            summary:'Small original UI preview',
+            steps:[{path:'StarterGui/Example',className:'ScreenGui',properties:[],source:''}]
+          })
+        }]
+      }]}),{status:200});
+    };
+    const response = await worker.fetch(preparedRequest({
+      prompt, model:'gpt-6-luna', gameOutline:'StarterGui direct children: 0'
+    }),env);
+    assert.equal(response.status,200);
+    assert.equal(checked,true);
+  }
+});
+
+test('model-building references are used for Part-based modeling without importing raw files', async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+  globalThis.fetch = async (url, opts) => {
+    const sent = JSON.parse(opts.body);
+    assert.ok(sent.instructions.includes('ROBLOX MODEL REFERENCE V1'));
+    assert.ok(sent.instructions.includes('Low-Poly-Stud-Forest'));
+    assert.ok(!sent.instructions.includes('Goku-Character-Model-Free.rbxl'));
+    assert.ok(sent.instructions.includes('cannot'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{
+        type:'output_text',text:JSON.stringify({
+          summary:'Create low-poly tree',
+          steps:[{path:'Workspace/Tree',className:'Model',properties:[],source:''}]
+        })
+      }]
+    }]}),{status:200});
+  };
+  const r = await worker.fetch(preparedRequest({
+    prompt:'Build a low-poly forest model',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+});
+
+test('gradient and shine UI proposal classes are supported by the Worker with review-only response', async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+  const plan = {
+    summary:'Layered original button shine',
+    steps:[
+      {path:'StarterGui/Shop',className:'ScreenGui',properties:[],source:''},
+      {path:'StarterGui/Shop/BuyButton',className:'TextButton',properties:[
+        {name:'Text',value:'BUY'},
+        {name:'TextStrokeTransparency',value:'0.65'}
+      ],source:''},
+      {path:'StarterGui/Shop/BuyButton/Rounded',className:'UICorner',properties:[
+        {name:'CornerRadius',value:'0,12'}
+      ],source:''},
+      {path:'StarterGui/Shop/BuyButton/Shading',className:'UIGradient',properties:[
+        {name:'Color',value:'70,255,190|8,175,148'},
+        {name:'Transparency',value:'0|0.15'},
+        {name:'Rotation',value:'65'}
+      ],source:''}
+    ]
+  };
+  globalThis.fetch = async (url, opts) => {
+    const sent = JSON.parse(opts.body);
+    assert.ok(sent.instructions.includes('UIGradient'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',text:JSON.stringify(plan)}]
+    }]}),{status:200});
+  };
+  const r = await worker.fetch(preparedRequest({
+    prompt:'Make a polished shop UI',
+    model:'gpt-6-luna',gameOutline:'StarterGui direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+  const body = await r.json();
+  assert.equal(body.applied,false);
+  assert.equal(body.plan.steps[3].className,'UIGradient');
+});
