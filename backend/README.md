@@ -28,6 +28,22 @@ Only approved property names/types are writable; unsupported properties or Class
 
 Approved Scripts/LocalScripts start **disabled** for safety. ModuleScripts do not execute until required. The user should inspect generated code and test it in Studio before enabling scripts. Thus Apply stages the functionality; code is not automatically run.
 
+
+## Public Roblox trend and game-link research (experimental)
+
+The v0.8 research preview extends the **same Prepare/Apply experience**; it does not add extra main actions or give AI permission to make changes automatically.
+
+- Paste up to **four** Roblox experience links under the plugin's collapsed **Connection & privacy settings**, or include `https://www.roblox.com/games/<placeId>/...` in your natural-language request.
+- Optional **Research public Roblox Top Trending** toggle queries Roblox's publicly available Top Trending chart on Prepare; it is **OFF by default**.
+- The Cloudflare Worker extracts numeric place IDs only. It then calls only fixed, Roblox-owned public endpoints to resolve IDs and retrieve public game metadata: title, description, genre, concurrent players, visits, favorites and update date. The chart lookup uses Roblox's public Explore API, which is not a stable contract and can be unavailable.
+- The game-research summaries are included as **untrusted data** in the planning request to OpenAI. The AI is instructed to identify patterns actually supported by those sources and use them for *original* designs rather than copying someone's work.
+- The full review preview includes the researched game titles, public links, available popularity numbers, and a reminder that public metadata **does not expose in-game UIs, scripts or model internals**.
+- If public data or charts are unavailable, research quietly degrades and the normal Prepare flow remains usable. Do **not** treat failed/empty chart requests as confirmation of what is trending.
+- No Roblox cookies, private account tokens or arbitrary URL requests are needed. Links are never fetched directly; only fixed Roblox public API origins can be called by the research code.
+- Trend research can add network latency and a small amount of OpenAI input-token usage when available. OpenAI API billing is separate from ChatGPT Plus.
+
+**Limitations:** This does **not** yet analyze actual gameplay screenshots or user-uploaded `.rbxm`/`.rbxmx` models. Those require a separate, consented media/file pipeline. Game icons and descriptions are not proof of internal code or UI appearance. The pattern-research feature is a working first step toward a reusable visual/model reference library, not actual model fine-tuning.
+
 ## Setup and upgrades
 
 1. Have an eligible adult manage OpenAI API access, billing, and the Cloudflare account. API charges are separate from ChatGPT Plus.
