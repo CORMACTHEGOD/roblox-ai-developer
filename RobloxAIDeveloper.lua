@@ -173,9 +173,25 @@ local contextButton = button(
     setupFrame, "ContextPermission", "Share game structure with AI: OFF", Color3.fromRGB(105, 69, 69), 34
 )
 contextButton.TextSize = 12
-label(setupFrame, "Privacy", "Opt-in shares up to 220 object paths/classes and selected properties when you press Prepare. Never sends script Source.", 62, 12)
+local trendButton = button(
+    setupFrame, "TrendingResearch", "Research public Roblox Top Trending: OFF",
+    Color3.fromRGB(78, 84, 96), 34
+)
+trendButton.TextSize = 12
+label(setupFrame, "ReferencesNote",
+    "Optional: paste up to 4 Roblox experience links below (one per line). " ..
+    "You can also put game links directly in your request. Only public metadata is fetched.", 55, 12)
+local referenceInput = input(
+    setupFrame, "RobloxReferenceLinks", "https://www.roblox.com/games/PLACE_ID/...",
+    84, true
+)
+label(setupFrame, "Privacy",
+    "Prepare shares up to 220 object paths/classes only if opted in; never Script.Source. " ..
+    "Trend research uses public Roblox game descriptions and popularity, not private in-game UI/scripts.",
+    80, 12)
 local settingsOpen = false
 local consent = false
+local researchTrending = false
 local token = nil
 local preferredModel = "gpt-6-luna"
 local okModel, savedModel = pcall(function()
@@ -197,11 +213,24 @@ end)
 if okConsent and savedConsent == true then
     consent = true
 end
+local okTrend, savedTrend = pcall(function()
+    return plugin:GetSetting("OrangeJuiceResearchTrending")
+end)
+researchTrending = okTrend and savedTrend == true
+local okRefs, savedRefs = pcall(function()
+    return plugin:GetSetting("OrangeJuiceReferenceLinks")
+end)
+if okRefs and type(savedRefs) == "string" then
+    referenceInput.Text = savedRefs:sub(1, 1100)
+end
 
 local function refreshSettings()
     setupFrame.Visible = settingsOpen
     contextButton.Text = "Share game structure with AI: " .. (consent and "ON" or "OFF")
     contextButton.BackgroundColor3 = consent and green or Color3.fromRGB(105, 69, 69)
+    trendButton.Text = "Research public Roblox Top Trending: " ..
+        (researchTrending and "ON" or "OFF")
+    trendButton.BackgroundColor3 = researchTrending and blue or Color3.fromRGB(78, 84, 96)
 end
 
 settingsOpen = not consent or not okURL or not savedURL or savedURL == ""
@@ -262,6 +291,30 @@ contextButton.MouseButton1Click:Connect(function()
     refreshSettings()
     cancel("Context sharing " .. (consent and "enabled" or "disabled") .. ". Prepare again.")
 end)
+trendButton.MouseButton1Click:Connect(function()
+    researchTrending = not researchTrending
+    pcall(function() plugin:SetSetting("OrangeJuiceResearchTrending", researchTrending) end)
+    refreshSettings()
+    cancel("Trend research " .. (researchTrending and "ON" or "OFF") .. ". Prepare again.")
+end)
+referenceInput:GetPropertyChangedSignal("Text"):Connect(function()
+    if #referenceInput.Text > 1100 then
+        referenceInput.Text = referenceInput.Text:sub(1, 1100)
+        return
+    end
+    pcall(function()
+        plugin:SetSetting("OrangeJuiceReferenceLinks", referenceInput.Text)
+    end)
+    cancel("Roblox game references changed. Press Prepare again.")
+end)
+local function referenceLinkLines()
+    local links = {}
+    for line in referenceInput.Text:gmatch("[^\r\n]+") do
+        if #links >= 4 then break end
+        if #line <= 280 then table.insert(links, line) end
+    end
+    return links
+end
 
 local roots = {
     Workspace = true, ReplicatedStorage = true, ServerStorage = true,
@@ -664,7 +717,9 @@ prepareButton.MouseButton1Click:Connect(function()
                     ["Authorization"]="Bearer " .. token
                 },
                 Body=HttpService:JSONEncode({
-                    prompt=text, model=preferredModel, gameOutline=outline
+                    prompt=text, model=preferredModel, gameOutline=outline,
+                    referenceLinks=referenceLinkLines(),
+                    researchTrending=researchTrending
                 })
             })
         end)
@@ -696,7 +751,33 @@ prepareButton.MouseButton1Click:Connect(function()
         plan.original = original
         plan.serial = serial
         pending = plan
-        previewText.Text = plan.preview
+        local researchLines = {}
+        local research = decoded.research
+        if type(research) == "table" then
+            table.insert(researchLines, "PUBLIC ROBLOX RESEARCH (metadata, not private scripts/UI)")
+            if type(research.games) == "table" then
+                for _, example in ipairs(research.games) do
+                    if type(example) == "table" then
+                        local name = tostring(example.name or "Untitled"):sub(1, 100)
+                        local origin = example.source == "top_trending_chart" and "Top Trending" or "Linked game"
+                        table.insert(researchLines, origin .. ": " .. name ..
+                            " | Players: " .. tostring(example.playing or "unknown") ..
+                            " | Genre: " .. tostring(example.genre or "unknown"))
+                        table.insert(researchLines, tostring(example.link or ""))
+                    end
+                end
+            end
+            if type(research.notes) == "table" then
+                for _, note in ipairs(research.notes) do
+                    table.insert(researchLines, "Note: " .. tostring(note):sub(1, 200))
+                end
+            end
+            table.insert(researchLines,
+                "Popularity data does not reveal a game's actual scripts, models, or UI layout.")
+        end
+        local researchPreview = #researchLines > 0 and
+            (table.concat(researchLines, "\n") .. "\n\n") or ""
+        previewText.Text = researchPreview .. plan.preview
         previewFrame.CanvasPosition = Vector2.new(0, 0)
         previewTitle.Text = "Review the full plan before Apply"
         status.Text = "Prepared " .. #plan.steps .. " objects/changes. Nothing changed yet."
