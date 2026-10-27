@@ -331,6 +331,7 @@ local allowedClass = {
     TextLabel = true, TextButton = true, TextBox = true, ImageLabel = true,
     UIGradient = true, UICorner = true, UIStroke = true, UIListLayout = true,
     UIPadding = true, ProximityPrompt = true, ClickDetector = true,
+    PointLight = true, SpotLight = true,
     RemoteEvent = true, RemoteFunction = true,
     IntValue = true, NumberValue = true, BoolValue = true, StringValue = true,
     Script = true, LocalScript = true, ModuleScript = true
@@ -359,13 +360,19 @@ local allowedProperty = {
     ProximityPrompt = {
         ActionText=true, ObjectText=true, HoldDuration=true, MaxActivationDistance=true
     },
-    ValueObject = { Value=true }
+    ValueObject = { Value=true },
+    Light = {
+        Brightness=true, Color=true, Enabled=true,
+        Range=true, Shadows=true
+    },
+    SpotLight = { Angle=true, Face=true }
 }
 local function safeProperty(instance, prop)
     local function inGroup(group)
         return allowedProperty[group] and allowedProperty[group][prop]
     end
     if instance:IsA("BasePart") and inGroup("BasePart") then return true end
+    if instance:IsA("Light") and inGroup("Light") then return true end
     if instance:IsA("GuiObject") and inGroup("GuiObject") then return true end
     if (instance:IsA("TextLabel") or instance:IsA("TextButton") or
         instance:IsA("TextBox")) and inGroup("TextObject") then return true end
@@ -535,6 +542,17 @@ local function parseValue(instance, name, raw)
     if kind == "number" then
         local n = tonumber(raw)
         if n and n == n and math.abs(n) <= 20000 then
+            if instance:IsA("Light") then
+                if name == "Brightness" and (n < 0 or n > 10) then
+                    return nil, "Light Brightness must be 0-10"
+                end
+                if name == "Range" and (n < 0 or n > 60) then
+                    return nil, "Light Range must be 0-60"
+                end
+                if name == "Angle" and (n < 0 or n > 180) then
+                    return nil, "SpotLight Angle must be 0-180"
+                end
+            end
             return n
         end
         return nil, "Invalid number for " .. name
@@ -609,7 +627,8 @@ local function parseValue(instance, name, raw)
         local enumType = ({
             Material = Enum.Material, Shape = Enum.PartType,
             Font = Enum.Font, FillDirection = Enum.FillDirection,
-            TopSurface = Enum.SurfaceType, BottomSurface = Enum.SurfaceType
+            TopSurface = Enum.SurfaceType, BottomSurface = Enum.SurfaceType,
+            Face = Enum.NormalId
         })[name]
         local result = enumType and enumType[raw] or nil
         return result, result and nil or "Unknown enum for " .. name
