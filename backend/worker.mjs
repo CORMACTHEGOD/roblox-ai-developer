@@ -9,6 +9,7 @@ const MAX_REQUEST_BYTES = 32000;
 const MAX_CONTEXT_LENGTH = 11000;
 const MAX_PLAN_STEPS = 24;
 const MAX_PLAN_SOURCE_LENGTH = 20000;
+const UNIFIED_PREPARE_TIMEOUT_MS = 45000; // bigger combined builds can take longer than short suggestions
 const SUPPORTED_CLASSES = new Set([
   "Folder", "Model", "Part", "WedgePart", "SpawnLocation",
   "ScreenGui", "Frame", "TextLabel", "TextButton", "TextBox", "ImageLabel",
@@ -189,15 +190,20 @@ export default {
           model,
           instructions: unifiedMode ? unifiedInstructions : scriptMode ? scriptProposalInstructions : instructions,
           input,
+          ...(unifiedMode ? { reasoning: { effort: "low" } } : {}),
           ...(unifiedMode ? { text: { format: unifiedFormat } }
             : scriptMode ? { text: { format: scriptProposalFormat } } : {}),
           store: false,
           max_output_tokens: unifiedMode ? 7500 : scriptMode ? 3600 : 1600
         }),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(unifiedMode ? UNIFIED_PREPARE_TIMEOUT_MS : 30000)
       });
-    } catch {
-      return reply({ error: "AI service connection failed or timed out" }, 502);
+    } catch (error) {
+      // Separate the expected deadline from network/DNS errors without leaking keys or request data.
+      const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+      return timedOut
+        ? reply({ error: "OpenAI took too long preparing this build. Try a smaller feature or retry.", kind: "upstream_timeout" }, 504)
+        : reply({ error: "Cloudflare could not reach OpenAI. Check Worker logs or retry.", kind: "upstream_network" }, 502);
     }
 
     if (!upstream.ok) {
