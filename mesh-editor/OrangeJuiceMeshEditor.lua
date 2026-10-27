@@ -1,7 +1,7 @@
--- Orange Juice Mesh Editor, experimental v0.1
+-- Orange Juice Mesh Editor, experimental v0.1.1
 -- Separate, local-only Roblox Studio plugin. No OpenAI / Cloudflare / Roblox Assistant.
 -- ACTUAL geometry: AssetService:CreateEditableMesh -> CreateMeshPartAsync.
--- Prototype: new connected cube, Object/Edit, vertex/edge/face picking, move/rotate/scale, undo.
+-- Prototype: 12-triangle connected cube (no quad beta), Object/Edit, vertex/edge/face picking, transforms, undo.
 -- Loop Cut, Bevel, Knife, color and texture workflows are NOT implemented yet.
 -- Do not publish this experimental version until viewport/persistence testing.
 
@@ -93,6 +93,7 @@ text(main, "REAL MESH MODELING  •  LOCAL ONLY", 26, Color3.fromRGB(255, 177, 8
 text(main, "New mesh from scratch; no ordinary Parts. Click mesh geometry in the 3D viewport to select it.", 48)
 
 local status = text(main, "Create a cube to start editing.", 56, Color3.fromRGB(179, 211, 253))
+local diagnostics = text(main, "Diagnostics: click Create Editable Cube to verify this plugin receives input.", 100, Color3.fromRGB(255, 208, 147))
 local makeRow = row()
 local createButton = button(makeRow, "Create Editable Cube", 1)
 local modeRow = row()
@@ -138,6 +139,19 @@ local state = {
 
 local function message(msg)
     status.Text = tostring(msg)
+end
+
+local function diagnostic(stage, detail, isError)
+    local contents = "[Orange Juice Mesh v0.1.1] " .. tostring(stage)
+    if detail ~= nil then contents = contents .. ": " .. tostring(detail) end
+    diagnostics.Text = contents
+    if isError then
+        status.Text = "FAILED at " .. tostring(stage) .. ". See Diagnostics and Studio Output."
+        warn(contents)
+    else
+        status.Text = tostring(stage)
+        print(contents)
+    end
 end
 
 local function clearMarkers()
@@ -305,10 +319,13 @@ local function setSelectionKind(kind)
 end
 
 local function makeCube()
-    if state.mesh then clearMarkers() end
+    diagnostic("Button click detected", "Attempting real mesh creation")
+    local stage = "CreateEditableMesh"
     local ok, result = pcall(function()
         local editable = AssetService:CreateEditableMesh()
-        if not editable then error("CreateEditableMesh returned nil.") end
+        if not editable then error("CreateEditableMesh returned nil (permissions or memory).") end
+        diagnostic("EditableMesh created", "Adding eight shared vertices")
+        stage = "AddVertex"
         local v = {}
         for _, p in ipairs({
             Vector3.new(-2,-2,-2), Vector3.new(2,-2,-2),
@@ -318,21 +335,30 @@ local function makeCube()
         }) do
             table.insert(v, editable:AddVertex(p))
         end
-        -- CCW winding as viewed from outside. Shared IDs join neighboring faces.
+        -- TWO TRIANGLES per side, no EditableMesh Quads Studio beta required.
+        -- The eight shared vertex IDs keep all twelve triangles connected.
+        diagnostic("Vertices created", "Building 12 standard triangle faces")
+        stage = "AddTriangle"
         for _, face in ipairs({
-            {v[1],v[4],v[3],v[2]}, -- rear
+            {v[1],v[4],v[3],v[2]}, -- back
             {v[5],v[6],v[7],v[8]}, -- front
             {v[1],v[5],v[8],v[4]}, -- left
             {v[2],v[3],v[7],v[6]}, -- right
             {v[1],v[2],v[6],v[5]}, -- bottom
             {v[4],v[8],v[7],v[3]}  -- top
         }) do
-            editable:AddFace(face)
+            editable:AddTriangle(face[1],face[2],face[3])
+            editable:AddTriangle(face[1],face[3],face[4])
         end
+        diagnostic("Triangles created", "Converting connected geometry into MeshPart")
+        stage = "CreateMeshPartAsync"
         local part = AssetService:CreateMeshPartAsync(
             Content.fromObject(editable),
             {CollisionFidelity = Enum.CollisionFidelity.Hull}
         )
+        if not part then error("CreateMeshPartAsync returned nil.") end
+        diagnostic("MeshPart created", "Placing it in Workspace")
+        stage = "Place in Workspace"
         part.Name = "Orange Juice Editable Cube"
         part.Anchored = true
         part.CanCollide = true
@@ -344,18 +370,24 @@ local function makeCube()
         return {mesh = editable, part = part}
     end)
     if not ok then
-        message("Mesh API unavailable: " .. tostring(result))
+        diagnostic(stage, result, true)
         return
     end
     state.mesh, state.part = result.mesh, result.part
     state.undo = {}
     clearGeometrySelection()
-    Selection:Set({state.part})
-    widget.Enabled = true
-    plugin:Activate(true)
-    setMode("Edit")
-    setSelectionKind("Vertex")
-    message("Created ONE real MeshPart with 8 shared vertices and 6 quad faces.")
+    local setupOk, setupErr = pcall(function()
+        Selection:Set({state.part})
+        widget.Enabled = true
+        plugin:Activate(true)
+        setMode("Edit")
+        setSelectionKind("Vertex")
+    end)
+    if not setupOk then
+        diagnostic("Mesh created but editor setup", setupErr, true)
+        return
+    end
+    diagnostic("SUCCESS", "Created real MeshPart with 8 shared vertices and 12 triangles. No beta feature needed.")
 end
 
 local function screenPoint(pos)
@@ -451,7 +483,10 @@ mouse.Button1Down:Connect(function()
     end
 end)
 
-createButton.MouseButton1Click:Connect(makeCube)
+createButton.MouseButton1Click:Connect(function()
+    local ok, err = pcall(makeCube)
+    if not ok then diagnostic("Unexpected click handler error", err, true) end
+end)
 objectButton.MouseButton1Click:Connect(function() setMode("Object") end)
 editButton.MouseButton1Click:Connect(function() setMode("Edit") end)
 vertexButton.MouseButton1Click:Connect(function() setSelectionKind("Vertex") end)
@@ -510,3 +545,4 @@ end)
 setMode("Object")
 setSelectionKind("Vertex")
 message("Create an Editable Cube, then switch between Object and Edit Mode.")
+print("[Orange Juice Mesh v0.1.1] Loaded. If clicking Create does not show a Button click diagnostic, check Studio Output for plugin startup errors.")
