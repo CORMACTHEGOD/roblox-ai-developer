@@ -14,7 +14,7 @@ const SUPPORTED_CLASSES = new Set([
   "Folder", "Model", "Part", "WedgePart", "SpawnLocation",
   "ScreenGui", "Frame", "TextLabel", "TextButton", "TextBox", "ImageLabel", "UIGradient",
   "UICorner", "UIStroke", "UIListLayout", "UIPadding",
-  "ProximityPrompt", "ClickDetector", "RemoteEvent", "RemoteFunction",
+  "ProximityPrompt", "ClickDetector", "PointLight", "SpotLight", "RemoteEvent", "RemoteFunction",
   "IntValue", "NumberValue", "BoolValue", "StringValue",
   "Script", "LocalScript", "ModuleScript"
 ]);
@@ -30,13 +30,13 @@ Study the current GAME OUTLINE carefully (hierarchy names, classes and selected 
 If a required object is ABSENT, propose creating it AND all dependent objects and scripts as a coordinated set. Do not assume the user pre-created something when it isn't shown in the outline. If the outline is incomplete, create a safely named item or make a runtime existence check.
 Plan ordered steps, parent BEFORE child. Every step has EXACT absolute slash-separated path, className, properties [{name,value}], and source string.
 Root must be one of Workspace, ReplicatedStorage, ServerStorage, ServerScriptService, StarterGui, StarterPack, StarterPlayer.
-Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UIGradient, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue, Script, LocalScript, ModuleScript.
+Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UIGradient, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, PointLight, SpotLight, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue, Script, LocalScript, ModuleScript.
 Stay within 48 steps TOTAL. For ordinary menus, aim for 15-30 well-chosen objects rather than dozens of tiny decoration objects. If the design is too large, prioritize a self-contained, functional and polished subset; never leave dependencies dangling. For an existing object, propose its existing path with the same ClassName and only properties to change, or omit it entirely if no changes are needed.
 Scripts must have source. Prefer Script in ServerScriptService or inside a Workspace model/part, LocalScript inside StarterGui's GUI tree or StarterPlayer/StarterPlayerScripts. Never assume LocalScript runs when parented directly to Workspace.
 Avoid referencing objects or remotes that aren't in the existing outline OR created by the steps. If a RemoteEvent is needed for client/server communication and absent, PROPOSE CREATING it in ReplicatedStorage and the corresponding client and server handlers. For shared state you may create IntValue/NumberValue/BoolValue/StringValue and set Value.
 For scripts, put executable Luau only in source, with no introductory/tutorial/approval comments. Source MUST be empty for non-script objects.
 All property values are STRINGS. UDim is "scale,offset". RGB colors are "r,g,b" in 0-255 integers. Vector3 is "x,y,z". UDim2 is "scaleX,offsetX,scaleY,offsetY". Vector2 is "x,y". Use true/false for booleans and standard names for materials and fonts.
-Valid properties: Value for value objects; Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape, TopSurface, BottomSurface, Reflectance, CastShadow for Parts; Size, Position, AnchorPoint, Rotation, BackgroundColor3, BackgroundTransparency, ClipsDescendants, BorderSizePixel, Visible, ZIndex for GuiObjects; Text, TextColor3, TextSize, TextWrapped, TextScaled, TextStrokeColor3, TextStrokeTransparency, Font for TextLabel, TextButton and TextBox; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness, Color and Transparency for UIStroke; Color, Transparency, Rotation and Offset for UIGradient; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt. Only use properties actually supported by the chosen ClassName. For UIGradient Color, encode 2-4 RGB triplets as "r,g,b|r,g,b"; for UIGradient Transparency encode 2-4 numbers between 0 and 1 as "0|0.2|0.4". UIGradient Rotation is a decimal angle and Offset is "x,y". TopSurface and BottomSurface accept "Studs" or "Smooth". Make gradients subtle and intentional rather than busy.
+Valid properties: Value for value objects; Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape, TopSurface, BottomSurface, Reflectance, CastShadow for Parts; Size, Position, AnchorPoint, Rotation, BackgroundColor3, BackgroundTransparency, ClipsDescendants, BorderSizePixel, Visible, ZIndex for GuiObjects; Text, TextColor3, TextSize, TextWrapped, TextScaled, TextStrokeColor3, TextStrokeTransparency, Font for TextLabel, TextButton and TextBox; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness, Color and Transparency for UIStroke; Color, Transparency, Rotation and Offset for UIGradient; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt; Brightness, Color, Enabled, Range and Shadows for PointLight and SpotLight; Angle and Face for SpotLight (Face enum Top, Bottom, Front, Back, Left or Right). Parent lights under a Part or Attachment in real Roblox Studio; this builder supports Parts. For lights, use modest brightness (0-10) and range (0-60). Only use properties actually supported by the chosen ClassName. For UIGradient Color, encode 2-4 RGB triplets as "r,g,b|r,g,b"; for UIGradient Transparency encode 2-4 numbers between 0 and 1 as "0|0.2|0.4". UIGradient Rotation is a decimal angle and Offset is "x,y". TopSurface and BottomSurface accept "Studs" or "Smooth". Make gradients subtle and intentional rather than busy.
 No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting scripts, no unsafe code, no external HTTP/asset loading or external code execution.
 Provide a concise summary of the WHOLE change (ideally under 300 characters), not an essay. Avoid duplicating existing Parts and UIs. Approval happens separately in Studio, and inserted scripts start disabled.
 Example if asked "create a door that changes color when touched": propose Workspace/Door Part with Anchored true, Size, Position, Color, AND Workspace/Door/TouchHandler Script with functioning Touched event code. If Workspace/Door already appears as a Part, reuse it and only add the missing child Script.
@@ -88,11 +88,19 @@ Low-Poly-Stud-Forest: many reusable Parts and Welds suggest assembled modular ge
 These inventories do NOT verify correctness of any original scripts or prove the artistic appearance. Do not copy character likenesses or source assets.
 For a new requested object, inspect the current hierarchy; create missing models and structural primitives instead of assuming they exist, and include all required behavior scripts/proximity prompts. Use simple harmonious scale, clean grouping and consistent color/material. Current plugin can only create the listed primitive classes, not generate Blender mesh geometry.`;
 
+const OJ_STYLE_LAMP_PROPS = `
+ORIGINAL BLENDER LAMP REFERENCE (user-created FBX inspected, not copied):
+The example assembled a recognizable lamp from three mesh components (491, 174, and 482 vertices, 1,147 total): a distinct rounded base and slim/tapered stem, upper cylindrical shade, and a small spherical accent. No exported materials were detected, so select your own intentional palette.
+For ANY new lamp or similar prop, prioritize recognizable SILHOUETTE and sensible component proportions: stable base, connecting support, top shade/detail. Group missing pieces in a new Model with clear names. Arrange Parts using deliberate positions/sizes (they are NOT automatically laid out by a Model).
+Create an original approximation from Part primitives; for cylindrical supports use Part Shape=Cylinder only if the resulting orientation is correct, and for bulbs consider Part Shape=Ball. Do not claim to recreate the FBX mesh exactly.
+For a light-emitting lamp, create PointLight or SpotLight under a suitable BasePart and set a reasonable warm Color, Range and Brightness; add an interactive ProximityPrompt plus a Script only if the user requests on/off interaction. Never claim a decorative Part alone emits light. All new scripts are inserted DISABLED for review.
+This is a reusable component-assembly lesson, not a license to distribute the user's raw FBX or other creators' meshes.`;
+
 function styleKnowledgeFor(request) {
   const p = String(request || "").toLowerCase();
   const profiles = [];
   const ui = /\b(shop|store|ui|gui|interface|menu|panel|rebirth|index|inventory|upgrade|admin|settings|quest|pet|hud|currency|button|screen)\b/.test(p);
-  const models = /\b(model|build|forest|tree|house|door|chest|environment|map|3d|npc|character|prop|world|coin|school|obby)\b/.test(p);
+  const models = /\b(model|build|forest|tree|house|door|chest|environment|map|3d|npc|character|prop|world|coin|school|obby|lamp|light|lighting|lantern|furniture|vending|kiosk|statue|sign)\b/.test(p);
   if (ui) {
     profiles.push(OJ_STYLE_CORE);
     if (/\b(shop|store|offer|product|buy|gamepass)\b/.test(p)) profiles.push(OJ_STYLE_SHOP);
@@ -101,7 +109,10 @@ function styleKnowledgeFor(request) {
     else if (/\b(index|collection|catalog|catalogue|dex)\b/.test(p)) profiles.push(OJ_STYLE_INDEX);
   }
   if (models || !ui) profiles.push(OJ_STYLE_MODELS);
-  return profiles.join("\n").slice(0, 3900);
+  if (/\b(lamp|lantern|light|lighting|furniture|vending|kiosk)\b/.test(p)) {
+    profiles.push(OJ_STYLE_LAMP_PROPS);
+  }
+  return profiles.join("\n").slice(0, 5200);
 }
 
 const unifiedFormat = {
