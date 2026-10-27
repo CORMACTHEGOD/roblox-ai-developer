@@ -343,9 +343,13 @@ local allowedProperty = {
     },
     GuiObject = {
         Size=true, Position=true, AnchorPoint=true, BackgroundColor3=true,
-        BackgroundTransparency=true, Visible=true, ZIndex=true, Rotation=true
+        BackgroundTransparency=true, Visible=true, ZIndex=true, Rotation=true,
+        ClipsDescendants=true, BorderSizePixel=true
     },
-    TextObject = { Text=true, TextColor3=true, TextSize=true, TextWrapped=true, Font=true },
+    TextObject = {
+        Text=true, TextColor3=true, TextSize=true, TextWrapped=true, Font=true,
+        TextScaled=true, TextStrokeColor3=true, TextStrokeTransparency=true
+    },
     ScreenGui = { ResetOnSpawn=true, IgnoreGuiInset=true },
     UICorner = { CornerRadius=true },
     UIStroke = { Thickness=true, Color=true, Transparency=true },
