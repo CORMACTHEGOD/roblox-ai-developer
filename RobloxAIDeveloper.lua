@@ -581,10 +581,12 @@ local function isScript(className)
     return className == "Script" or className == "LocalScript" or className == "ModuleScript"
 end
 
+local MAX_PLAN_STEPS = 48 -- Must match Cloudflare Worker.
 local function validatePlan(data)
     if type(data) ~= "table" or type(data.summary) ~= "string" or
-        type(data.steps) ~= "table" or #data.steps < 1 or #data.steps > 24 then
-        return nil, "AI returned an invalid plan."
+        type(data.steps) ~= "table" or #data.steps < 1 or #data.steps > MAX_PLAN_STEPS then
+        return nil, "AI returned an invalid plan (supported: 1-" ..
+            tostring(MAX_PLAN_STEPS) .. " objects)."
     end
     local out = {}
     local seen = {}
