@@ -329,7 +329,7 @@ local allowedClass = {
     Folder = true, Model = true, Part = true, WedgePart = true,
     SpawnLocation = true, ScreenGui = true, Frame = true,
     TextLabel = true, TextButton = true, TextBox = true, ImageLabel = true,
-    UICorner = true, UIStroke = true, UIListLayout = true,
+    UIGradient = true, UICorner = true, UIStroke = true, UIListLayout = true,
     UIPadding = true, ProximityPrompt = true, ClickDetector = true,
     RemoteEvent = true, RemoteFunction = true,
     IntValue = true, NumberValue = true, BoolValue = true, StringValue = true,
@@ -338,16 +338,18 @@ local allowedClass = {
 local allowedProperty = {
     BasePart = {
         Size=true, Position=true, Orientation=true, Anchored=true,
-        CanCollide=true, Transparency=true, Color=true, Material=true, Shape=true
+        CanCollide=true, Transparency=true, Color=true, Material=true, Shape=true,
+        TopSurface=true, BottomSurface=true, Reflectance=true, CastShadow=true
     },
     GuiObject = {
         Size=true, Position=true, AnchorPoint=true, BackgroundColor3=true,
-        BackgroundTransparency=true, Visible=true, ZIndex=true
+        BackgroundTransparency=true, Visible=true, ZIndex=true, Rotation=true
     },
     TextObject = { Text=true, TextColor3=true, TextSize=true, TextWrapped=true, Font=true },
     ScreenGui = { ResetOnSpawn=true, IgnoreGuiInset=true },
     UICorner = { CornerRadius=true },
-    UIStroke = { Thickness=true, Color=true },
+    UIStroke = { Thickness=true, Color=true, Transparency=true },
+    UIGradient = { Color=true, Transparency=true, Rotation=true, Offset=true },
     UIListLayout = { FillDirection=true, Padding=true },
     UIPadding = { PaddingTop=true, PaddingLeft=true, PaddingRight=true, PaddingBottom=true },
     ProximityPrompt = {
@@ -557,10 +559,53 @@ local function parseValue(instance, name, raw)
         end
         return Color3.fromRGB(p[1],p[2],p[3])
     end
+
+    if kind == "ColorSequence" then
+        local stops = {}
+        for segment in (raw .. "|"):gmatch("(.-)|") do
+            if #stops >= 4 then return nil, "Too many UIGradient colors" end
+            local rgb = parseNumbers(segment, 3)
+            if not rgb then return nil, "Invalid UIGradient color triplet" end
+            for _, component in ipairs(rgb) do
+                if component < 0 or component > 255 then
+                    return nil, "UIGradient RGB must be between 0 and 255"
+                end
+            end
+            table.insert(stops, Color3.fromRGB(rgb[1], rgb[2], rgb[3]))
+        end
+        if #stops < 2 then return nil, "UIGradient needs at least two colors" end
+        local keypoints = {}
+        for i, color in ipairs(stops) do
+            table.insert(keypoints, ColorSequenceKeypoint.new(
+                (i-1) / (#stops-1), color
+            ))
+        end
+        return ColorSequence.new(keypoints)
+    end
+    if kind == "NumberSequence" then
+        local stops = {}
+        for segment in (raw .. "|"):gmatch("(.-)|") do
+            if #stops >= 4 then return nil, "Too many UIGradient transparency stops" end
+            local n = tonumber(trim(segment))
+            if not n or n ~= n or n < 0 or n > 1 then
+                return nil, "UIGradient transparency must be between 0 and 1"
+            end
+            table.insert(stops, n)
+        end
+        if #stops < 2 then return nil, "UIGradient needs at least two transparency stops" end
+        local keypoints = {}
+        for i, value in ipairs(stops) do
+            table.insert(keypoints, NumberSequenceKeypoint.new(
+                (i-1) / (#stops-1), value
+            ))
+        end
+        return NumberSequence.new(keypoints)
+    end
     if kind == "EnumItem" then
         local enumType = ({
             Material = Enum.Material, Shape = Enum.PartType,
-            Font = Enum.Font, FillDirection = Enum.FillDirection
+            Font = Enum.Font, FillDirection = Enum.FillDirection,
+            TopSurface = Enum.SurfaceType, BottomSurface = Enum.SurfaceType
         })[name]
         local result = enumType and enumType[raw] or nil
         return result, result and nil or "Unknown enum for " .. name
