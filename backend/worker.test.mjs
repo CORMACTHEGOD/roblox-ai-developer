@@ -613,3 +613,78 @@ test('Lamp reference profile does not intrude into unrelated GUI requests', asyn
   }), env);
   assert.equal(result.status, 200);
 });
+
+
+test('horse model plans use inspected organic-rig references but never claim animation is implemented', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.openai.com/v1/responses');
+    const body = JSON.parse(options.body);
+    assert.ok(body.instructions.includes('ORGANIC MODEL REFERENCE'));
+    assert.ok(body.instructions.includes('Horse-Rig'));
+    assert.ok(body.instructions.includes('not verified animation functionality'));
+    assert.ok(!body.instructions.includes('HARD-SURFACE VEHICLE REFERENCE'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',
+        text:JSON.stringify({summary:'A simple original Part-based pony',steps:[
+          {path:'Workspace/Pony',className:'Model',properties:[],source:''},
+          {path:'Workspace/Pony/Body',className:'Part',properties:[],source:''}
+        ]})
+      }]
+    }]}),{status:200});
+  };
+  const result = await worker.fetch(preparedRequest({
+    prompt:'Build an original low-poly horse model',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  const body = await result.json();
+  assert.equal(result.status,200);
+  assert.equal(body.applied,false);
+  assert.equal(body.plan.steps.length,2);
+});
+
+test('vehicle model plans use high-poly reference as performance caution', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (_url, options) => {
+    const payload=JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('HARD-SURFACE VEHICLE REFERENCE'));
+    assert.ok(payload.instructions.includes('504 geometry objects'));
+    assert.ok(payload.instructions.includes('NOT a recommended Roblox runtime budget'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',text:JSON.stringify({
+        summary:'Original low-poly vehicle body',
+        steps:[{path:'Workspace/Car',className:'Model',properties:[],source:''}]
+      })}]
+    }]}),{status:200});
+  };
+  const r=await worker.fetch(preparedRequest({
+    prompt:'Make an original low-poly sports car',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+});
+
+test('stylized prop requests use broad silhouette guidance and do not include copied mesh bytes', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (_url, options) => {
+    const payload=JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('STYLIZED PROP REFERENCE'));
+    assert.ok(payload.instructions.includes('four separately named mesh components'));
+    assert.ok(payload.instructions.includes('not any weapon mechanics'));
+    assert.ok(!payload.instructions.includes('5020133'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',text:JSON.stringify({
+        summary:'Original decorative prop',
+        steps:[{path:'Workspace/DisplayProp',className:'Model',properties:[],source:''}]
+      })}]
+    }]}),{status:200});
+  };
+  const r=await worker.fetch(preparedRequest({
+    prompt:'Create a stylized decorative pirate prop',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+});
