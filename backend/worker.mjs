@@ -96,11 +96,23 @@ Create an original approximation from Part primitives; for cylindrical supports 
 For a light-emitting lamp, create PointLight or SpotLight under a suitable BasePart and set a reasonable warm Color, Range and Brightness; add an interactive ProximityPrompt plus a Script only if the user requests on/off interaction. Never claim a decorative Part alone emits light. All new scripts are inserted DISABLED for review.
 This is a reusable component-assembly lesson, not a license to distribute the user's raw FBX or other creators' meshes.`;
 
+const OJ_STYLE_ANIMAL_MODELS = `
+ORGANIC MODEL REFERENCE: a low-poly horse FBX was inspected: one 1,004-vertex mesh with a separate Horse-Rig hierarchy, many named limbs and animation/bone records. This shows the distinction between a visual MESH and a movement RIG, not verified animation functionality.
+For animal/creature requests, make an ORIGINAL recognizable silhouette (body, head, ears, legs, tail), respect readable bilateral anatomy, name and group parts consistently, and distinguish decorative static animals from playable/animated characters. Do not invent mesh IDs, bones, animation asset IDs or claim to generate a skinned rig with this primitive-only plugin. Prefer an honest simple Part approximation when feasible.`;
+
+const OJ_STYLE_VEHICLES = `
+HARD-SURFACE VEHICLE REFERENCE: one detailed sports car FBX contains 504 geometry objects and about 444,749 vertices, with separate material classes (paint, glass, rubber, metal and trim). This is an illustration of SUBCOMPONENT NAMING and MATERIAL GROUPING, NOT a recommended Roblox runtime budget or a license to copy that brand/model.
+For any original car/vehicle, sketch the complete silhouette first, then build logical body, wheel, window, trim and light groups. Keep symmetrical spacing and scale. Prefer lightweight/optimized low-poly geometric construction and reuse consistent materials. The plugin does not currently import or produce real FBX mesh shapes, engines, wheel constraints, or driving physics unless supported objects and scripts are explicitly available. Do not promise a working drivable vehicle without those dependencies.`;
+
+const OJ_STYLE_STYLIZED_PROPS = `
+STYLIZED PROP REFERENCE: a low-poly pirate-themed decorative game-asset FBX uses four separately named mesh components, 877 vertices, one material and one texture reference. The transferable pattern is simplified readable silhouette, deliberate grouping, modest part count and coherent material/color separation, not any weapon mechanics or reconstruction.
+For standalone game accessories, create ORIGINAL compact forms with major body, connector and accent pieces, focus on proportions and readability, and avoid excessive microdetail. No external meshes are embedded in Orange Juice AI.`;
+
 function styleKnowledgeFor(request) {
   const p = String(request || "").toLowerCase();
   const profiles = [];
   const ui = /\b(shop|store|ui|gui|interface|menu|panel|rebirth|index|inventory|upgrade|admin|settings|quest|pet|hud|currency|button|screen)\b/.test(p);
-  const models = /\b(model|build|forest|tree|house|door|chest|environment|map|3d|npc|character|prop|world|coin|school|obby|lamp|light|lighting|lantern|furniture|vending|kiosk|statue|sign)\b/.test(p);
+  const models = /\b(model|build|forest|tree|house|door|chest|environment|map|3d|npc|character|prop|world|coin|school|obby|lamp|light|lighting|lantern|furniture|vending|kiosk|statue|sign|horse|animal|pet|creature|mount|vehicle|car|truck|sports car|wheel|boat|accessory|sword|low.poly|pirate)\b/.test(p);
   if (ui) {
     profiles.push(OJ_STYLE_CORE);
     if (/\b(shop|store|offer|product|buy|gamepass)\b/.test(p)) profiles.push(OJ_STYLE_SHOP);
@@ -112,7 +124,16 @@ function styleKnowledgeFor(request) {
   if (/\b(lamp|lantern|light|lighting|furniture|vending|kiosk)\b/.test(p)) {
     profiles.push(OJ_STYLE_LAMP_PROPS);
   }
-  return profiles.join("\n").slice(0, 5200);
+  if (/\b(horse|animal|creature|mount|quadruped|pony)\b/.test(p)) {
+    profiles.push(OJ_STYLE_ANIMAL_MODELS);
+  }
+  if (/\b(car|vehicle|truck|racecar|race|wheels|wheel|sports car|supercar)\b/.test(p)) {
+    profiles.push(OJ_STYLE_VEHICLES);
+  }
+  if (/\b(accessory|prop|sword|pirate|fantasy item|handheld)\b/.test(p)) {
+    profiles.push(OJ_STYLE_STYLIZED_PROPS);
+  }
+  return profiles.join("\n").slice(0, 6500);
 }
 
 const unifiedFormat = {
