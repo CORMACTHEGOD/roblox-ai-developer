@@ -181,7 +181,7 @@ test('unified Prepare rejects duplicate paths, unsupported classes and unsafe fo
     { ...doorPlan, steps: [{ ...doorPlan.steps[0], className: 'DataStoreService' }] },
     { ...doorPlan, steps: [{ ...doorPlan.steps[0], path: 'Players/Hacked' }] },
     { ...doorPlan, steps: [{ ...doorPlan.steps[0], source: 'print("invalid")' }] },
-    { ...doorPlan, steps: Array.from({ length: 25 }, (_, i) => ({
+    { ...doorPlan, steps: Array.from({ length: 49 }, (_, i) => ({
       ...doorPlan.steps[0], path: 'Workspace/Part' + i
     })) }
   ];
@@ -383,4 +383,69 @@ test('Reference research input is bounded, unauthenticated arbitrary URLs are ig
   assert.equal((await worker.fetch(preparedRequest({
     prompt:'Build shop',model:'gpt-6-luna',gameOutline:'Workspace',researchTrending:'on'
   }),env)).status,400);
+});
+
+
+test('complex shop proposals with 25-48 objects are accepted as one reviewed plan', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  const makePlan = (count) => ({
+    summary: 'Polished working original Roblox simulator shop UI. '.repeat(30),
+    steps: Array.from({length: count}, (_, i) => ({
+      path: 'StarterGui/ShopItem' + (i + 1),
+      className: 'Frame',
+      properties: [{name: 'BackgroundColor3',value:'32,44,67'}],
+      source: ''
+    }))
+  });
+  for (const count of [25, 40, 48]) {
+    const plan = makePlan(count);
+    globalThis.fetch = async (_url, opts) => {
+      const data = JSON.parse(opts.body);
+      assert.equal(data.max_output_tokens, 10000);
+      assert.match(data.instructions, /48 steps/);
+      return new Response(JSON.stringify({output:[{
+        type:'message',content:[{type:'output_text',text:JSON.stringify(plan)}]
+      }]}),{status:200});
+    };
+    const r = await worker.fetch(preparedRequest({
+      model: 'gpt-6-luna',
+      prompt: 'Create an original polished shop',
+      gameOutline: 'StarterGui direct children: 0'
+    }),env);
+    assert.equal(r.status,200, 'expected ' + count + ' step plan to be accepted');
+    const parsed = await r.json();
+    assert.equal(parsed.plan.steps.length,count);
+    assert.equal(parsed.plan.summary.length,700);
+    assert.equal(parsed.applied,false);
+  }
+});
+
+test('oversized and empty plans have clear non-destructive errors', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  const cases = [
+    {plan: {summary:'Too many',steps:Array.from({length:49}, (_,i)=>({
+      path:'StarterGui/Item'+i, className:'Frame',properties:[],source:''
+    }))}, kind:'too_many_steps', status:502, stepCount:49},
+    {plan: {summary:'Nothing',steps:[]}, kind:'empty_plan',status:502},
+    {plan: {summary:'Invalid',steps:null}, kind:'invalid_plan_format',status:502}
+  ];
+  for (const check of cases) {
+    globalThis.fetch = async () => new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',text:JSON.stringify(check.plan)}]
+    }]}),{status:200});
+    const response = await worker.fetch(preparedRequest({
+      prompt:'Make a shop',model:'gpt-6-luna',gameOutline:'StarterGui direct children: 0'
+    }),env);
+    assert.equal(response.status,check.status);
+    const result = await response.json();
+    assert.equal(result.kind,check.kind);
+    if (check.stepCount) {
+      assert.equal(result.proposedSteps,check.stepCount);
+      assert.equal(result.maxSteps,48);
+      assert.match(result.error,/49 objects/i);
+    }
+    assert.equal(result.plan,undefined);
+  }
 });
