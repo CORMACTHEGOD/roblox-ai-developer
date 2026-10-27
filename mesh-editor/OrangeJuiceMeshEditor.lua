@@ -1,7 +1,9 @@
--- Orange Juice Mesh Editor, experimental v0.1.1
+-- Orange Juice Mesh Editor, experimental v0.2
 -- Separate, local-only Roblox Studio plugin. No OpenAI / Cloudflare / Roblox Assistant.
 -- ACTUAL geometry: AssetService:CreateEditableMesh -> CreateMeshPartAsync.
--- Prototype: 12-triangle connected cube (no quad beta), Object/Edit, vertex/edge/face picking, transforms, undo.
+-- Uses Studio's NATIVE Move/Scale/Rotate ribbon tools through a temporary transform proxy.
+-- Object Mode transforms the MeshPart. Edit Mode transfers a proxy's native gizmo
+-- movement/rotation/scale onto selected EditableMesh vertices. This is experimental.
 -- Loop Cut, Bevel, Knife, color and texture workflows are NOT implemented yet.
 -- Do not publish this experimental version until viewport/persistence testing.
 
@@ -104,25 +106,18 @@ local vertexButton = button(selectRow, "Vertex", 1/3)
 local edgeButton = button(selectRow, "Edge", 1/3)
 local faceButton = button(selectRow, "Face", 1/3)
 
-text(main, "MOVE • 0.25 STUD IN LOCAL AXIS", 22)
-local xRow = row()
-local moveXN = button(xRow, "X −", 1/3)
-local moveXP = button(xRow, "X +", 1/3)
-local moveYN = button(xRow, "Y −", 1/3)
-local yRow = row()
-local moveYP = button(yRow, "Y +", 1/3)
-local moveZN = button(yRow, "Z −", 1/3)
-local moveZP = button(yRow, "Z +", 1/3)
-
-text(main, "SCALE / ROTATE • LOCAL AXES", 22)
-local scaleRow = row()
-local scaleDown = button(scaleRow, "Scale −10%", 0.5)
-local scaleUp = button(scaleRow, "Scale +10%", 0.5)
-local rotRow = row()
-local rotLeft = button(rotRow, "Rotate Z −15°", 0.5)
-local rotRight = button(rotRow, "Rotate Z +15°", 0.5)
+text(main, "USE ROBLOX STUDIO'S NORMAL TRANSFORM GIZMOS", 32, Color3.fromRGB(255, 184, 91))
+text(main,
+    "Edit: click Pick Geometry, then click a point, edge or face on the cube. Drag the usual Studio Move (2), Scale (3), or Rotate (4) tools. Pick Geometry again to change selection.",
+    91, Color3.fromRGB(196, 226, 255))
+local pickRow = row()
+local pickButton = button(pickRow, "Pick Geometry in Viewport", 1)
+local nativeRow = row()
+local moveToolButton = button(nativeRow, "Studio Move", 1/3)
+local scaleToolButton = button(nativeRow, "Studio Scale", 1/3)
+local rotateToolButton = button(nativeRow, "Studio Rotate", 1/3)
 local undoRow = row()
-local undoButton = button(undoRow, "Undo Last Transform", 1)
+local undoButton = button(undoRow, "Undo Last Edit", 1)
 
 text(main,
     "Prototype limits: one geometry selection at a time. Loop Cut, Bevel and Knife come next. Color and texture come later. No asset uploads.",
@@ -134,7 +129,10 @@ text(main,
 local state = {
     part = nil, mesh = nil, mode = "Object", selectionKind = "Vertex",
     selectedVertex = nil, selectedEdge = nil, selectedFace = nil,
-    markers = {}, undo = {}
+    markers = {}, undo = {},
+    proxy = nil, proxyConnections = {}, proxySyncing = false, proxyBaseline = nil,
+    picking = false, dragging = false, dragRevision = 0,
+    ribbonTool = Enum.RibbonTool.Move
 }
 
 local function message(msg)
@@ -142,7 +140,7 @@ local function message(msg)
 end
 
 local function diagnostic(stage, detail, isError)
-    local contents = "[Orange Juice Mesh v0.1.1] " .. tostring(stage)
+    local contents = "[Orange Juice Mesh v0.2] " .. tostring(stage)
     if detail ~= nil then contents = contents .. ": " .. tostring(detail) end
     diagnostics.Text = contents
     if isError then
@@ -159,6 +157,22 @@ local function clearMarkers()
         marker:Destroy()
     end
     table.clear(state.markers)
+end
+
+local function clearProxy()
+    state.proxySyncing = true
+    state.proxyBaseline = nil
+    state.dragging = false
+    state.dragRevision = state.dragRevision + 1
+    for _, connection in ipairs(state.proxyConnections) do
+        connection:Disconnect()
+    end
+    table.clear(state.proxyConnections)
+    if state.proxy then
+        state.proxy:Destroy()
+        state.proxy = nil
+    end
+    state.proxySyncing = false
 end
 
 local function clearGeometrySelection()
@@ -228,86 +242,235 @@ local function snapshot()
     for _, id in ipairs(state.mesh:GetVertices()) do
         positions[id] = state.mesh:GetPosition(id)
     end
+    local baseline = state.proxyBaseline
     table.insert(state.undo, {
-        positions = positions, cframe = state.part.CFrame, size = state.part.Size
+        positions = positions,
+        cframe = state.part.CFrame,
+        size = state.part.Size,
+        proxyCFrame = baseline and baseline.cframe or (state.proxy and state.proxy.CFrame),
+        proxySize = baseline and baseline.size or (state.proxy and state.proxy.Size)
     })
     if #state.undo > 25 then table.remove(state.undo, 1) end
 end
 
-local function transformVertices(fn)
-    local ids = selectedIds()
-    if #ids == 0 then
-        message("Edit Mode: click one vertex, edge or face first.")
+local function safeMeshScale()
+    if not state.part then return nil end
+    local meshSize = state.part.MeshSize
+    if math.abs(meshSize.X) < 0.00001 or math.abs(meshSize.Y) < 0.00001
+        or math.abs(meshSize.Z) < 0.00001 then return nil end
+    return state.part.Size / meshSize
+end
+
+local function recaptureProxyBaseline()
+    if not state.mesh or not state.proxy or not state.part then
+        state.proxyBaseline = nil
         return
     end
-    snapshot()
-    local pivot = Vector3.zero
-    for _, id in ipairs(ids) do pivot = pivot + state.mesh:GetPosition(id) end
-    pivot = pivot / #ids
+    local ids = selectedIds()
+    local meshScale = safeMeshScale()
+    if #ids == 0 or not meshScale then
+        state.proxyBaseline = nil
+        return
+    end
+    local originalPositions = {}
     for _, id in ipairs(ids) do
-        local old = state.mesh:GetPosition(id)
-        state.mesh:SetPosition(id, fn(old, pivot))
+        originalPositions[id] = state.mesh:GetPosition(id)
+    end
+    state.proxyBaseline = {
+        ids = ids,
+        positions = originalPositions,
+        cframe = state.proxy.CFrame,
+        size = state.proxy.Size,
+        meshCFrame = state.part.CFrame,
+        meshScale = meshScale
+    }
+end
+
+-- The native Studio ribbon tools only transform selected Instances, not
+-- EditableMesh subgeometry. An invisible, NON-GEOMETRY Part is selected as
+-- a transform pivot. Its CFrame/Size changes are mapped to actual mesh vertices.
+-- It is transient; the user-created model is still only ONE MeshPart.
+local function onNativeGizmoChanged()
+    if state.proxySyncing or not state.proxyBaseline or not state.proxy then return end
+    if state.mode ~= "Edit" or state.picking then return end
+    local baseline = state.proxyBaseline
+    local proxyCF, proxySize = state.proxy.CFrame, state.proxy.Size
+    if proxyCF == baseline.cframe and proxySize == baseline.size then return end
+    if not state.dragging then
+        snapshot()
+        state.dragging = true
+    end
+    local factor = Vector3.new(
+        proxySize.X / math.max(baseline.size.X, 0.01),
+        proxySize.Y / math.max(baseline.size.Y, 0.01),
+        proxySize.Z / math.max(baseline.size.Z, 0.01)
+    )
+    local success, err = pcall(function()
+        for _, id in ipairs(baseline.ids) do
+            local original = baseline.positions[id]
+            local world = baseline.meshCFrame:PointToWorldSpace(original * baseline.meshScale)
+            local relative = baseline.cframe:PointToObjectSpace(world)
+            local stretched = relative * factor
+            local newWorld = proxyCF:PointToWorldSpace(stretched)
+            local newLocal = baseline.meshCFrame:PointToObjectSpace(newWorld) / baseline.meshScale
+            state.mesh:SetPosition(id, newLocal)
+        end
+    end)
+    if not success then
+        diagnostic("Native gizmo transform", err, true)
+        state.proxySyncing = true
+        state.proxy.CFrame = baseline.cframe
+        state.proxy.Size = baseline.size
+        state.proxySyncing = false
+        return
     end
     refreshMarkers()
-    message("Transformed " .. #ids .. " shared mesh vertices.")
+    state.dragRevision = state.dragRevision + 1
+    local revision = state.dragRevision
+    task.delay(0.5, function()
+        if state.dragRevision ~= revision or not state.dragging then return end
+        state.dragging = false
+        recaptureProxyBaseline()
+        message("Applied native Studio transform to selected " .. state.selectionKind
+            .. ". Use Pick Geometry to select another.")
+    end)
 end
 
-local function move(dx, dy, dz)
-    if not state.part then message("Create a mesh first."); return end
-    if state.mode == "Object" then
-        snapshot()
-        state.part.CFrame = state.part.CFrame * CFrame.new(dx, dy, dz)
-        message("Moved mesh object.")
-    else
-        transformVertices(function(p)
-            return p + Vector3.new(dx, dy, dz)
-        end)
-    end
+local function createProxy()
+    if state.proxy then return state.proxy end
+    local proxy = Instance.new("Part")
+    proxy.Name = "_OJ_Mesh_Gizmo_Pivot_DO_NOT_SAVE"
+    proxy.Anchored = true
+    proxy.CanCollide = false
+    proxy.CanTouch = false
+    proxy.CanQuery = false
+    proxy.Transparency = 1
+    proxy.CastShadow = false
+    proxy.Locked = false
+    proxy.Archivable = false
+    proxy.Size = Vector3.one
+    proxy.Parent = workspace
+    state.proxy = proxy
+    table.insert(state.proxyConnections,
+        proxy:GetPropertyChangedSignal("CFrame"):Connect(onNativeGizmoChanged))
+    table.insert(state.proxyConnections,
+        proxy:GetPropertyChangedSignal("Size"):Connect(onNativeGizmoChanged))
+    return proxy
 end
 
-local function scale(multiplier)
+local function selectNativeTool(tool)
     if not state.part then message("Create a mesh first."); return end
-    if state.mode == "Object" then
-        snapshot()
-        state.part.Size = state.part.Size * multiplier
-        message("Scaled mesh object.")
-    else
-        transformVertices(function(p, pivot)
-            return pivot + (p - pivot) * multiplier
-        end)
+    local target = state.part
+    if state.mode == "Edit" then
+        if not state.proxyBaseline or not state.proxy then
+            message("First click Pick Geometry, then a mesh vertex, edge or face.")
+            return
+        end
+        target = state.proxy
     end
+    local ok, err = pcall(function()
+        state.picking = false
+        plugin:Deactivate()
+        Selection:Set({target})
+        plugin:SelectRibbonTool(tool, UDim2.new())
+    end)
+    if not ok then
+        diagnostic("Activate Roblox Studio ribbon tool", err, true)
+        return
+    end
+    state.ribbonTool = tool
+    message("Now drag Roblox Studio's normal " .. tostring(tool.Name)
+        .. " gizmo. To pick different geometry, click Pick Geometry.")
 end
 
-local function rotate(angle)
-    if not state.part then message("Create a mesh first."); return end
-    local rotation = CFrame.Angles(0, 0, math.rad(angle))
-    if state.mode == "Object" then
-        snapshot()
-        state.part.CFrame = state.part.CFrame * rotation
-        message("Rotated mesh object on local Z.")
-    else
-        transformVertices(function(p, pivot)
-            return pivot + rotation:VectorToWorldSpace(p - pivot)
-        end)
+local function prepareProxyForSelection()
+    local ids = selectedIds()
+    if #ids == 0 or not state.part or not state.mesh then return false end
+    local proxy = createProxy()
+    local center = Vector3.zero
+    local minLocal = Vector3.new(math.huge, math.huge, math.huge)
+    local maxLocal = Vector3.new(-math.huge, -math.huge, -math.huge)
+    for _, id in ipairs(ids) do
+        local world = worldOfVertex(id)
+        if not world then
+            diagnostic("Create edit gizmo", "Mesh dimensions are invalid", true)
+            return false
+        end
+        center = center + world
+        minLocal = minLocal:Min(state.mesh:GetPosition(id))
+        maxLocal = maxLocal:Max(state.mesh:GetPosition(id))
     end
+    center = center / #ids
+    local scale = safeMeshScale()
+    if not scale then return false end
+    local size = (maxLocal - minLocal) * scale
+    state.proxySyncing = true
+    proxy.CFrame = CFrame.new(center) * state.part.CFrame.Rotation
+    proxy.Size = Vector3.new(
+        math.max(size.X, 1.0),
+        math.max(size.Y, 1.0),
+        math.max(size.Z, 1.0)
+    )
+    state.proxySyncing = false
+    state.dragRevision = state.dragRevision + 1
+    state.dragging = false
+    recaptureProxyBaseline()
+    return state.proxyBaseline ~= nil
+end
+
+local function activateGeometryPick()
+    if state.mode ~= "Edit" or not state.part then
+        message("Choose Edit Mode and create a mesh first.")
+        return
+    end
+    state.picking = true
+    state.dragRevision = state.dragRevision + 1
+    state.dragging = false
+    state.proxyBaseline = nil
+    -- Geometry is chosen through the plugin mouse. The native ribbon tool
+    -- takes over again when selection is complete.
+    local ok, err = pcall(function()
+        Selection:Set({state.part})
+        plugin:Activate(true)
+    end)
+    if not ok then
+        diagnostic("Activate geometry picking", err, true)
+        return
+    end
+    refreshMarkers()
+    message("PICK " .. state.selectionKind .. ": click the cube in the viewport.")
 end
 
 local function setMode(nextMode)
     state.mode = nextMode
+    state.picking = false
     clearGeometrySelection()
+    if nextMode == "Object" then
+        clearProxy()
+    else
+        state.proxyBaseline = nil
+    end
     objectButton.BackgroundColor3 = nextMode == "Object"
         and Color3.fromRGB(213, 122, 35) or Color3.fromRGB(48, 87, 133)
     editButton.BackgroundColor3 = nextMode == "Edit"
         and Color3.fromRGB(213, 122, 35) or Color3.fromRGB(48, 87, 133)
     refreshMarkers()
-    message(nextMode .. " Mode. " .. (nextMode == "Edit"
-        and "Click a vertex, edge or face in the viewport."
-        or "Transform the complete mesh."))
+    if not state.part then
+        message("Create an Editable Cube first.")
+    elseif nextMode == "Edit" then
+        activateGeometryPick()
+    else
+        selectNativeTool(state.ribbonTool)
+        message("OBJECT MODE: use Roblox Studio's Move (2), Scale (3), Rotate (4) on the whole MeshPart.")
+    end
 end
 
 local function setSelectionKind(kind)
     state.selectionKind = kind
     clearGeometrySelection()
+    state.proxyBaseline = nil
+    state.dragRevision = state.dragRevision + 1
+    state.dragging = false
     vertexButton.BackgroundColor3 = kind == "Vertex"
         and Color3.fromRGB(213, 122, 35) or Color3.fromRGB(48, 87, 133)
     edgeButton.BackgroundColor3 = kind == "Edge"
@@ -315,7 +478,11 @@ local function setSelectionKind(kind)
     faceButton.BackgroundColor3 = kind == "Face"
         and Color3.fromRGB(213, 122, 35) or Color3.fromRGB(48, 87, 133)
     refreshMarkers()
-    message("Edit " .. kind .. " selection: click your mesh.")
+    if state.mode == "Edit" and state.part then
+        activateGeometryPick()
+    else
+        message("Selection mode: " .. kind)
+    end
 end
 
 local function makeCube()
@@ -373,21 +540,21 @@ local function makeCube()
         diagnostic(stage, result, true)
         return
     end
+    clearProxy()
     state.mesh, state.part = result.mesh, result.part
     state.undo = {}
     clearGeometrySelection()
     local setupOk, setupErr = pcall(function()
         Selection:Set({state.part})
         widget.Enabled = true
-        plugin:Activate(true)
+        state.selectionKind = "Vertex"
         setMode("Edit")
-        setSelectionKind("Vertex")
     end)
     if not setupOk then
         diagnostic("Mesh created but editor setup", setupErr, true)
         return
     end
-    diagnostic("SUCCESS", "Created real MeshPart with 8 shared vertices and 12 triangles. No beta feature needed.")
+    diagnostic("SUCCESS", "Created real MeshPart with 8 shared vertices/12 triangles. Click a vertex, then use Studio Move/Scale/Rotate.")
 end
 
 local function screenPoint(pos)
@@ -425,8 +592,8 @@ end
 
 local mouse = plugin:GetMouse()
 mouse.Button1Down:Connect(function()
-    if not widget.Enabled or state.mode ~= "Edit" or not state.mesh
-        or not state.part or mouse.Target ~= state.part then return end
+    if not widget.Enabled or state.mode ~= "Edit" or not state.picking
+        or not state.mesh or not state.part or mouse.Target ~= state.part then return end
     local m = Vector2.new(mouse.X, mouse.Y)
     local best = math.huge
     local chosen
@@ -479,7 +646,14 @@ mouse.Button1Down:Connect(function()
     end
     refreshMarkers()
     if chosen then
-        message("Selected " .. state.selectionKind .. ". Move / Scale / Rotate to edit.")
+        if prepareProxyForSelection() then
+            selectNativeTool(state.ribbonTool)
+        else
+            message("Selected geometry but the gizmo could not be initialized.")
+        end
+    else
+        message("Click closer to the " .. state.selectionKind:lower()
+            .. " you want to edit. Try rotating the camera.")
     end
 end)
 
@@ -492,47 +666,59 @@ editButton.MouseButton1Click:Connect(function() setMode("Edit") end)
 vertexButton.MouseButton1Click:Connect(function() setSelectionKind("Vertex") end)
 edgeButton.MouseButton1Click:Connect(function() setSelectionKind("Edge") end)
 faceButton.MouseButton1Click:Connect(function() setSelectionKind("Face") end)
-
-moveXN.MouseButton1Click:Connect(function() move(-0.25,0,0) end)
-moveXP.MouseButton1Click:Connect(function() move(0.25,0,0) end)
-moveYN.MouseButton1Click:Connect(function() move(0,-0.25,0) end)
-moveYP.MouseButton1Click:Connect(function() move(0,0.25,0) end)
-moveZN.MouseButton1Click:Connect(function() move(0,0,-0.25) end)
-moveZP.MouseButton1Click:Connect(function() move(0,0,0.25) end)
-scaleDown.MouseButton1Click:Connect(function() scale(0.9) end)
-scaleUp.MouseButton1Click:Connect(function() scale(1.1) end)
-rotLeft.MouseButton1Click:Connect(function() rotate(-15) end)
-rotRight.MouseButton1Click:Connect(function() rotate(15) end)
+pickButton.MouseButton1Click:Connect(activateGeometryPick)
+moveToolButton.MouseButton1Click:Connect(function() selectNativeTool(Enum.RibbonTool.Move) end)
+scaleToolButton.MouseButton1Click:Connect(function() selectNativeTool(Enum.RibbonTool.Scale) end)
+rotateToolButton.MouseButton1Click:Connect(function() selectNativeTool(Enum.RibbonTool.Rotate) end)
 
 undoButton.MouseButton1Click:Connect(function()
     if not state.mesh or not state.part then message("No active mesh."); return end
     local last = table.remove(state.undo)
-    if not last then message("No transform to undo."); return end
+    if not last then message("No mesh edit to undo."); return end
     local ok, err = pcall(function()
         for id, pos in pairs(last.positions) do
             state.mesh:SetPosition(id, pos)
         end
         state.part.CFrame = last.cframe
         state.part.Size = last.size
+        if state.proxy and last.proxyCFrame and last.proxySize then
+            state.proxySyncing = true
+            state.proxy.CFrame = last.proxyCFrame
+            state.proxy.Size = last.proxySize
+            state.proxySyncing = false
+            state.dragRevision = state.dragRevision + 1
+            state.dragging = false
+            recaptureProxyBaseline()
+        end
     end)
-    if not ok then message("Undo failed: " .. tostring(err)); return end
+    state.proxySyncing = false
+    if not ok then diagnostic("Undo", err, true); return end
     refreshMarkers()
-    message("Undid the last transform.")
+    message("Undid last mesh edit (plugin history). Note that Studio's Ctrl+Z is separate.")
 end)
 
 toggleButton.Click:Connect(function()
     widget.Enabled = not widget.Enabled
     if widget.Enabled then
-        plugin:Activate(true)
+        if state.mode == "Edit" then
+            activateGeometryPick()
+        elseif state.part then
+            selectNativeTool(state.ribbonTool)
+        end
     else
+        state.picking = false
         clearMarkers()
+        clearProxy()
         plugin:Deactivate()
+        if state.part then Selection:Set({state.part}) end
     end
 end)
 
 widget:GetPropertyChangedSignal("Enabled"):Connect(function()
     if not widget.Enabled then
+        state.picking = false
         clearMarkers()
+        clearProxy()
     elseif state.mesh and state.part then
         refreshMarkers()
     end
@@ -540,9 +726,13 @@ end)
 
 plugin.Unloading:Connect(function()
     clearMarkers()
+    clearProxy()
+    if state.part and state.part.Parent then
+        Selection:Set({state.part})
+    end
 end)
 
 setMode("Object")
 setSelectionKind("Vertex")
-message("Create an Editable Cube, then switch between Object and Edit Mode.")
-print("[Orange Juice Mesh v0.1.1] Loaded. If clicking Create does not show a Button click diagnostic, check Studio Output for plugin startup errors.")
+message("Create Editable Cube, choose Edit Mode and Pick Geometry. Studio gizmos edit mesh vertices.")
+print("[Orange Juice Mesh v0.2] Loaded. This experimental build mirrors native ribbon-tool transformations via a transient pivot.")
