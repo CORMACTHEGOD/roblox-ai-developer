@@ -599,12 +599,13 @@ test('Lamp reference profile does not intrude into unrelated GUI requests', asyn
     const payload = JSON.parse(options.body);
     assert.ok(payload.instructions.includes('SHOP PROFILE'));
     assert.ok(!payload.instructions.includes('ORIGINAL BLENDER LAMP REFERENCE'));
-    return new Response(JSON.stringify({output: [
-      {type: 'message', content: [{type: 'output_text', text: JSON.stringify({
-        summary: 'Shop created',
-        steps: [{path: 'StarterGui/ShopGui', className: 'ScreenGui', properties: [], source: ''}]
-      })}]
-    ]}), {status: 200});
+    const plan = {
+      summary: 'Shop created',
+      steps: [{path: 'StarterGui/ShopGui', className: 'ScreenGui', properties: [], source: ''}]
+    };
+    return new Response(JSON.stringify({output: [{
+      type: 'message', content: [{type: 'output_text', text: JSON.stringify(plan)}]
+    }]}), {status: 200});
   };
   const result = await worker.fetch(preparedRequest({
     prompt: 'Build a bright shop GUI',
