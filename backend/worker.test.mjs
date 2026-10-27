@@ -155,6 +155,7 @@ test('unified Prepare returns coordinated Part and Script plan, but never applie
     const sent = JSON.parse(opts.body);
     assert.equal(sent.model, 'gpt-6-luna');
     assert.equal(sent.store, false);
+    assert.equal(sent.reasoning.effort, 'low');
     assert.equal(sent.text.format.name, 'orange_juice_multi_object_plan');
     assert.ok(sent.input.includes('Workspace: Door [Part]'));
     return new Response(JSON.stringify({output: [{
@@ -220,4 +221,36 @@ test('unified Prepare supports combined client/server UI and remote dependency s
   }),env);
   assert.equal(r.status, 200);
   assert.deepEqual((await r.json()).plan.steps, combo.steps);
+});
+
+test('Prepare reports upstream timeouts distinctly without leaking credentials', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => {
+    const error = new Error('network deadline exceeded');
+    error.name = 'TimeoutError';
+    throw error;
+  };
+  const response = await worker.fetch(preparedRequest({
+    prompt: 'Make a treasure chest with parts, a lid and a prompt',
+    model: 'gpt-6-luna',
+    gameOutline: 'Workspace direct children: 0'
+  }), env);
+  assert.equal(response.status, 504);
+  const body = await response.json();
+  assert.equal(body.kind, 'upstream_timeout');
+  assert.match(body.error, /too long/i);
+  assert.ok(!JSON.stringify(body).includes(env.OPENAI_API_KEY));
+  assert.ok(!JSON.stringify(body).includes(env.CLIENT_TOKEN));
+});
+
+test('Prepare identifies transient upstream connection errors', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
+  const response = await worker.fetch(preparedRequest({
+    prompt: 'Make a chest', model: 'gpt-6-luna', gameOutline: 'Workspace empty'
+  }), env);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).kind, 'upstream_network');
 });
