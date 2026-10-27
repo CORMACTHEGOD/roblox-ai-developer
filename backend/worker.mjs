@@ -41,6 +41,8 @@ No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting 
 Provide a concise summary of the WHOLE change, not an essay. Approval happens separately in Studio, and inserted scripts start disabled.
 Example if asked "create a door that changes color when touched": propose Workspace/Door Part with Anchored true, Size, Position, Color, AND Workspace/Door/TouchHandler Script with functioning Touched event code. If Workspace/Door already appears as a Part, reuse it and only add the missing child Script.
 Example "shop UI": propose StarterGui/ShopGui ScreenGui, StarterGui/ShopGui/Panel Frame, labels/buttons AND a LocalScript attached to UI that makes buttons work when possible.
+For all GUI requests, use an ORIGINAL polished, modern, readable Roblox aesthetic, with a cohesive nonwhite palette, hierarchy, rounded panels (UICorner), legible contrast, consistent spacing, and working actions where possible. Avoid default plain white rectangle interfaces. Treat recent Roblox public chart metadata as signals about categories and themes, NOT evidence of how in-game UIs/models/scripts look.
+When public Roblox reference research is provided, study recurring supported themes and mechanics and implement your OWN design; never reproduce another game's proprietary scripts, names, textures, or exact UI design. If source data is metadata-only, do not claim you've viewed the game's actual UI or inspected its scripts.
 If a request cannot be safely fulfilled with these classes, propose a small achievable subset and make the limitation clear in summary.`;
 
 const unifiedFormat = {
@@ -306,7 +308,7 @@ export default {
       return reply({ error: "Invalid JSON" }, 400);
     }
     if (!data || typeof data !== "object" || Array.isArray(data)) return reply({ error: "Invalid request" }, 400);
-    const { prompt, model, gameOutline } = data;
+    const { prompt, model, gameOutline, referenceLinks, researchTrending } = data;
     if (typeof prompt !== "string" || prompt.trim().length < 1 || prompt.length > MAX_PROMPT_LENGTH) {
       return reply({ error: `Prompt must be 1-${MAX_PROMPT_LENGTH} characters` }, 400);
     }
@@ -318,9 +320,26 @@ export default {
     if (unifiedMode && (typeof gameOutline !== "string" || !gameOutline.trim())) {
       return reply({ error: "Game outline required: enable context sharing in plugin settings" }, 400);
     }
+    if (unifiedMode && (referenceLinks !== undefined &&
+        (!Array.isArray(referenceLinks) || referenceLinks.length > MAX_REFERENCE_LINKS ||
+         referenceLinks.some(item => typeof item !== "string" || item.length > 280)))) {
+      return reply({ error: "Use up to four Roblox game links" }, 400);
+    }
+    if (unifiedMode && researchTrending !== undefined && typeof researchTrending !== "boolean") {
+      return reply({ error: "Invalid trend research setting" }, 400);
+    }
+
+    const shouldResearch = unifiedMode &&
+      (researchTrending === true || gatherPlaceIds(prompt, referenceLinks).length > 0);
+    // Public Roblox metadata may be unavailable. Never prevent building just because
+    // a chart or reference link is temporarily down.
+    const research = shouldResearch
+      ? await publicRobloxResearch(prompt, referenceLinks, researchTrending === true)
+      : null;
     const input = `Roblox Studio user request:\n${prompt.trim()}\n\n` +
       (gameOutline ? `Optional Roblox game outline (names/classes, not script source):\n${gameOutline}` :
-        "No game outline was shared. Explain assumptions and do not invent its contents.");
+        "No game outline was shared. Explain assumptions and do not invent its contents.") +
+      (research ? "\n\n" + researchBrief(research) : "");
 
     let upstream;
     try {
@@ -416,7 +435,7 @@ export default {
       if (totalSource > MAX_PLAN_SOURCE_LENGTH) {
         return reply({ error: "AI proposed too much code at once; try a smaller request" }, 502);
       }
-      return reply({ plan, applied: false, requiresApproval: true });
+      return reply({ plan, research, applied: false, requiresApproval: true });
     }
     if (scriptMode) {
       let parsed;
