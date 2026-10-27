@@ -40,7 +40,9 @@ The `/v1/prepare` Worker now automatically selects a small, **curated developer-
 - **Admin:** visually polished but permission-aware controls with server-side checks.
 - **Models:** modular Part-based assembly, deliberate grouping and necessary scripts, based on broad structural patterns in developer-supplied Roblox places.
 
-These summaries were **manually extracted from three provided UI screenshots and three uploaded .rbxl file inventories**. The underlying images, models and scripts are **not** uploaded into the public repository. See `references/STYLE_SYSTEM_V1.md` and `references/PLACE_FILE_INVENTORY.md` for evidence and limits.
+These summaries were **manually extracted from three provided UI screenshots, three uploaded .rbxl file inventories, and one user-created original Blender lamp FBX**. The underlying images, models and scripts are **not** uploaded into the public repository. See `references/STYLE_SYSTEM_V1.md` and `references/PLACE_FILE_INVENTORY.md` for evidence and limits.
+
+The original Blender lamp reference adds **silhouette-first multi-piece prop modeling** guidance and allows a proposed **PointLight or SpotLight** inside a Part, with bounded Brightness/Range and full approval; no arbitrary imported Blender mesh geometry is reconstructed. See `references/BLENDER_LAMP_REFERENCE.md` for the verified mesh inventory and limitations.
 
 The Studio plugin additionally supports **UIGradient** (ColorSequence/NumberSequence through limited string encodings), stronger text outlines, uncluttered shine panels and Roblox stud surface properties, allowing these visual rules to generate more than plain static white UI. This does **not** automatically inspect new visual files or permanently train the underlying model. Users have no special reference setup; the developer embeds and updates the profiles in Cloudflare.
 
