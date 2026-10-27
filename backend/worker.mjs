@@ -5,7 +5,76 @@
 const ALLOWED_MODELS = new Set(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"]);
 const MAX_PROMPT_LENGTH = 3000;
 const MAX_OUTLINE_LENGTH = 6000;
-const MAX_REQUEST_BYTES = 16000;
+const MAX_REQUEST_BYTES = 32000;
+const MAX_CONTEXT_LENGTH = 11000;
+const MAX_PLAN_STEPS = 24;
+const MAX_PLAN_SOURCE_LENGTH = 20000;
+const UNIFIED_PREPARE_TIMEOUT_MS = 45000; // bigger combined builds can take longer than short suggestions
+const SUPPORTED_CLASSES = new Set([
+  "Folder", "Model", "Part", "WedgePart", "SpawnLocation",
+  "ScreenGui", "Frame", "TextLabel", "TextButton", "TextBox", "ImageLabel",
+  "UICorner", "UIStroke", "UIListLayout", "UIPadding",
+  "ProximityPrompt", "ClickDetector", "RemoteEvent", "RemoteFunction",
+  "IntValue", "NumberValue", "BoolValue", "StringValue",
+  "Script", "LocalScript", "ModuleScript"
+]);
+const SAFE_ROOTS = new Set([
+  "Workspace", "ReplicatedStorage", "ServerStorage",
+  "ServerScriptService", "StarterGui", "StarterPack", "StarterPlayer"
+]);
+
+const unifiedInstructions = `You are Orange Juice AI, a Roblox Studio builder that proposes a COMPLETE, single, multi-object change set.
+Your response is ONLY a JSON object that matches the strict schema. You must not execute or apply changes.
+The user gives one high-level wish. Automatically infer necessary models, Parts, UIs, folders, Script/LocalScript/ModuleScript dependencies and their locations. Do not make the user ask separately for model + script.
+Study the current GAME OUTLINE carefully (hierarchy names, classes and selected properties). If a suitable item already exists, reuse its EXACT path; never propose a duplicate merely because the user didn't mention existing parts.
+If a required object is ABSENT, propose creating it AND all dependent objects and scripts as a coordinated set. Do not assume the user pre-created something when it isn't shown in the outline. If the outline is incomplete, create a safely named item or make a runtime existence check.
+Plan ordered steps, parent BEFORE child. Every step has EXACT absolute slash-separated path, className, properties [{name,value}], and source string.
+Root must be one of Workspace, ReplicatedStorage, ServerStorage, ServerScriptService, StarterGui, StarterPack, StarterPlayer.
+Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue, Script, LocalScript, ModuleScript.
+At most 24 steps. For an existing object, propose its existing path with the same ClassName and only properties to change, or omit it entirely if no changes are needed.
+Scripts must have source. Prefer Script in ServerScriptService or inside a Workspace model/part, LocalScript inside StarterGui's GUI tree or StarterPlayer/StarterPlayerScripts. Never assume LocalScript runs when parented directly to Workspace.
+Avoid referencing objects or remotes that aren't in the existing outline OR created by the steps. If a RemoteEvent is needed for client/server communication and absent, PROPOSE CREATING it in ReplicatedStorage and the corresponding client and server handlers. For shared state you may create IntValue/NumberValue/BoolValue/StringValue and set Value.
+For scripts, put executable Luau only in source, with no introductory/tutorial/approval comments. Source MUST be empty for non-script objects.
+All property values are STRINGS. UDim is "scale,offset". RGB colors are "r,g,b" in 0-255 integers. Vector3 is "x,y,z". UDim2 is "scaleX,offsetX,scaleY,offsetY". Vector2 is "x,y". Use true/false for booleans and standard names for materials and fonts.
+Valid properties: Value for value objects; Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape for parts; Size, Position, AnchorPoint, BackgroundColor3, BackgroundTransparency, Text, TextColor3, TextSize, TextWrapped, Visible, ZIndex, Font for GuiObjects; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness and Color for UIStroke; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt. Only use properties actually supported by the chosen ClassName.
+No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting scripts, no unsafe code, no external HTTP/asset loading or external code execution.
+Provide a concise summary of the WHOLE change, not an essay. Approval happens separately in Studio, and inserted scripts start disabled.
+Example if asked "create a door that changes color when touched": propose Workspace/Door Part with Anchored true, Size, Position, Color, AND Workspace/Door/TouchHandler Script with functioning Touched event code. If Workspace/Door already appears as a Part, reuse it and only add the missing child Script.
+Example "shop UI": propose StarterGui/ShopGui ScreenGui, StarterGui/ShopGui/Panel Frame, labels/buttons AND a LocalScript attached to UI that makes buttons work when possible.
+If a request cannot be safely fulfilled with these classes, propose a small achievable subset and make the limitation clear in summary.`;
+
+const unifiedFormat = {
+  type: "json_schema", name: "orange_juice_multi_object_plan", strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      summary: { type: "string" },
+      steps: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            className: { type: "string" },
+            properties: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { name: { type: "string" }, value: { type: "string" } },
+                required: ["name", "value"], additionalProperties: false
+              }
+            },
+            source: { type: "string" }
+          },
+          required: ["path", "className", "properties", "source"],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ["summary", "steps"], additionalProperties: false
+  }
+};
+
 const MAX_SCRIPT_LENGTH = 9000;
 
 
@@ -65,7 +134,8 @@ export default {
       return reply({ status: "ok", service: "roblox-ai-developer-ai-bridge", mode: "private-beta" });
     }
     const scriptMode = path === "/v1/propose-script";
-    if (path !== "/v1/plan" && !scriptMode) return reply({ error: "Not found" }, 404);
+    const unifiedMode = path === "/v1/prepare";
+    if (path !== "/v1/plan" && !scriptMode && !unifiedMode) return reply({ error: "Not found" }, 404);
     if (request.method !== "POST") return reply({ error: "Method not allowed" }, 405);
     if (!env.OPENAI_API_KEY || !env.CLIENT_TOKEN) {
       return reply({ error: "Backend is not configured by the operator" }, 503);
@@ -97,10 +167,13 @@ export default {
       return reply({ error: `Prompt must be 1-${MAX_PROMPT_LENGTH} characters` }, 400);
     }
     if (!ALLOWED_MODELS.has(model)) return reply({ error: "Unsupported model" }, 400);
-    if (gameOutline !== undefined && (typeof gameOutline !== "string" || gameOutline.length > MAX_OUTLINE_LENGTH)) {
+    if (gameOutline !== undefined && (typeof gameOutline !== "string" || gameOutline.length > (unifiedMode ? MAX_CONTEXT_LENGTH : MAX_OUTLINE_LENGTH))) {
       return reply({ error: "Invalid game outline" }, 400);
     }
 
+    if (unifiedMode && (typeof gameOutline !== "string" || !gameOutline.trim())) {
+      return reply({ error: "Game outline required: enable context sharing in plugin settings" }, 400);
+    }
     const input = `Roblox Studio user request:\n${prompt.trim()}\n\n` +
       (gameOutline ? `Optional Roblox game outline (names/classes, not script source):\n${gameOutline}` :
         "No game outline was shared. Explain assumptions and do not invent its contents.");
@@ -115,16 +188,22 @@ export default {
         },
         body: JSON.stringify({
           model,
-          instructions: scriptMode ? scriptProposalInstructions : instructions,
+          instructions: unifiedMode ? unifiedInstructions : scriptMode ? scriptProposalInstructions : instructions,
           input,
-          ...(scriptMode ? { text: { format: scriptProposalFormat } } : {}),
+          ...(unifiedMode ? { reasoning: { effort: "low" } } : {}),
+          ...(unifiedMode ? { text: { format: unifiedFormat } }
+            : scriptMode ? { text: { format: scriptProposalFormat } } : {}),
           store: false,
-          max_output_tokens: scriptMode ? 3600 : 1600
+          max_output_tokens: unifiedMode ? 7500 : scriptMode ? 3600 : 1600
         }),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(unifiedMode ? UNIFIED_PREPARE_TIMEOUT_MS : 30000)
       });
-    } catch {
-      return reply({ error: "AI service connection failed or timed out" }, 502);
+    } catch (error) {
+      // Separate the expected deadline from network/DNS errors without leaking keys or request data.
+      const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+      return timedOut
+        ? reply({ error: "OpenAI took too long preparing this build. Try a smaller feature or retry.", kind: "upstream_timeout" }, 504)
+        : reply({ error: "Cloudflare could not reach OpenAI. Check Worker logs or retry.", kind: "upstream_network" }, 502);
     }
 
     if (!upstream.ok) {
@@ -144,6 +223,56 @@ export default {
       for (const content of item.content) {
         if (content?.type === "output_text" && typeof content.text === "string") segments.push(content.text);
       }
+    }
+
+    if (unifiedMode) {
+      let plan;
+      try {
+        plan = JSON.parse(segments.join("").trim());
+      } catch {
+        return reply({ error: "AI returned invalid structured plan; try a smaller request" }, 502);
+      }
+      if (!plan || typeof plan.summary !== "string" || plan.summary.length > 700 ||
+          !Array.isArray(plan.steps) || plan.steps.length < 1 || plan.steps.length > MAX_PLAN_STEPS) {
+        return reply({ error: "AI returned an invalid plan size" }, 502);
+      }
+      let totalSource = 0;
+      const seen = new Set();
+      for (const step of plan.steps) {
+        if (!step || typeof step.path !== "string" || step.path.length > 320 ||
+            typeof step.className !== "string" || !SUPPORTED_CLASSES.has(step.className) ||
+            !Array.isArray(step.properties) || step.properties.length > 16 ||
+            typeof step.source !== "string") {
+          return reply({ error: "AI proposed an unsupported object or property format" }, 502);
+        }
+        const tokens = step.path.split("/");
+        if (tokens.length < 2 || tokens.length > 9 || !SAFE_ROOTS.has(tokens[0]) ||
+            tokens.some(t => t.length < 1 || t.length > 70 || t === "." || t === ".." ||
+              /[\\/\r\n\0]/.test(t) || !t.trim()) ||
+            seen.has(step.path)) {
+          return reply({ error: "AI proposed an invalid or duplicate path" }, 502);
+        }
+        seen.add(step.path);
+        for (const property of step.properties) {
+          if (!property || typeof property.name !== "string" ||
+              !/^[A-Za-z][A-Za-z0-9]{0,32}$/.test(property.name) ||
+              typeof property.value !== "string" || property.value.length > 400) {
+            return reply({ error: "AI proposed an invalid property" }, 502);
+          }
+        }
+        const isScript = ["Script", "LocalScript", "ModuleScript"].includes(step.className);
+        if (isScript && (!step.source.trim() || step.source.length > 9000)) {
+          return reply({ error: "AI proposed a missing or oversized Script" }, 502);
+        }
+        if (!isScript && step.source !== "") {
+          return reply({ error: "AI proposed source for a non-script object" }, 502);
+        }
+        totalSource += step.source.length;
+      }
+      if (totalSource > MAX_PLAN_SOURCE_LENGTH) {
+        return reply({ error: "AI proposed too much code at once; try a smaller request" }, 502);
+      }
+      return reply({ plan, applied: false, requiresApproval: true });
     }
     if (scriptMode) {
       let parsed;

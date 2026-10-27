@@ -1,4 +1,4 @@
-name: Backend tests
+name: Orange Juice AI checks
 
 on:
   pull_request:
@@ -18,3 +18,7 @@ jobs:
           node-version: '22'
       - name: Run mock backend tests
         run: node --test backend/worker.test.mjs
+      - name: Install Lua syntax checker
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
+      - name: Parse Roblox Studio plugin source
+        run: luac5.4 -p RobloxAIDeveloper.lua
