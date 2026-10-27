@@ -494,7 +494,7 @@ test('model-building references are used for Part-based modeling without importi
     assert.ok(sent.instructions.includes('ROBLOX MODEL REFERENCE V1'));
     assert.ok(sent.instructions.includes('Low-Poly-Stud-Forest'));
     assert.ok(!sent.instructions.includes('Goku-Character-Model-Free.rbxl'));
-    assert.ok(sent.instructions.includes('cannot'));
+    assert.ok(sent.instructions.includes('not generate Blender mesh geometry'));
     return new Response(JSON.stringify({output:[{
       type:'message',content:[{
         type:'output_text',text:JSON.stringify({
