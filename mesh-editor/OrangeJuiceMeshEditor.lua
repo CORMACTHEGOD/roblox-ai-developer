@@ -228,8 +228,8 @@ local function transformVertices(fn)
     end
     snapshot()
     local pivot = Vector3.zero
-    for _, id in ipairs(ids) do pivot += state.mesh:GetPosition(id) end
-    pivot /= #ids
+    for _, id in ipairs(ids) do pivot = pivot + state.mesh:GetPosition(id) end
+    pivot = pivot / #ids
     for _, id in ipairs(ids) do
         local old = state.mesh:GetPosition(id)
         state.mesh:SetPosition(id, fn(old, pivot))
@@ -242,7 +242,7 @@ local function move(dx, dy, dz)
     if not state.part then message("Create a mesh first."); return end
     if state.mode == "Object" then
         snapshot()
-        state.part.CFrame *= CFrame.new(dx, dy, dz)
+        state.part.CFrame = state.part.CFrame * CFrame.new(dx, dy, dz)
         message("Moved mesh object.")
     else
         transformVertices(function(p)
@@ -255,7 +255,7 @@ local function scale(multiplier)
     if not state.part then message("Create a mesh first."); return end
     if state.mode == "Object" then
         snapshot()
-        state.part.Size *= multiplier
+        state.part.Size = state.part.Size * multiplier
         message("Scaled mesh object.")
     else
         transformVertices(function(p, pivot)
@@ -269,7 +269,7 @@ local function rotate(angle)
     local rotation = CFrame.Angles(0, 0, math.rad(angle))
     if state.mode == "Object" then
         snapshot()
-        state.part.CFrame *= rotation
+        state.part.CFrame = state.part.CFrame * rotation
         message("Rotated mesh object on local Z.")
     else
         transformVertices(function(p, pivot)
@@ -431,9 +431,9 @@ mouse.Button1Down:Connect(function()
             for _, vertexId in ipairs(ids) do
                 local world = worldOfVertex(vertexId)
                 if not world then return end
-                center += world
+                center = center + world
             end
-            center /= #ids
+            center = center / #ids
             local projected = screenPoint(center)
             if projected then
                 local d = (m-projected).Magnitude
