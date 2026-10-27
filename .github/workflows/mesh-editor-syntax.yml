@@ -1,0 +1,21 @@
+name: Orange Juice Mesh Editor syntax
+
+on:
+  pull_request:
+    paths:
+      - 'mesh-editor/**'
+      - '.github/workflows/mesh-editor-syntax.yml'
+  push:
+    paths:
+      - 'mesh-editor/**'
+      - '.github/workflows/mesh-editor-syntax.yml'
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.4 compiler
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
+      - name: Check mesh-editor plugin Lua syntax
+        run: luac5.4 -p mesh-editor/OrangeJuiceMeshEditor.lua
