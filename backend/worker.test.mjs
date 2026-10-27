@@ -548,3 +548,67 @@ test('gradient and shine UI proposal classes are supported by the Worker with re
   assert.equal(body.applied,false);
   assert.equal(body.plan.steps[3].className,'UIGradient');
 });
+
+
+test('user-created Blender lamp reference guides full assembly rather than assuming missing props exist', async (t) => {
+  const before = globalThis.fetch;
+  t.after(() => { globalThis.fetch = before; });
+  const plan = {
+    summary: 'New lamp built from base, stem, shade, bulb and warm light',
+    steps: [
+      {path: 'Workspace/ReadingLamp', className: 'Model', properties: [], source: ''},
+      {path: 'Workspace/ReadingLamp/Base', className: 'Part',
+        properties: [{name: 'Shape', value: 'Cylinder'}], source: ''},
+      {path: 'Workspace/ReadingLamp/Stem', className: 'Part', properties: [], source: ''},
+      {path: 'Workspace/ReadingLamp/TopShade', className: 'Part', properties: [], source: ''},
+      {path: 'Workspace/ReadingLamp/Bulb', className: 'Part',
+        properties: [{name: 'Shape', value: 'Ball'}], source: ''},
+      {path: 'Workspace/ReadingLamp/Bulb/WarmLight', className: 'PointLight',
+        properties: [{name: 'Brightness', value: '2'},
+          {name: 'Range', value: '16'}, {name: 'Color', value: '255,219,160'}], source: ''}
+    ]
+  };
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.openai.com/v1/responses');
+    const payload = JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('ORIGINAL BLENDER LAMP REFERENCE'));
+    assert.ok(payload.instructions.includes('1,147 total'));
+    assert.ok(payload.instructions.includes('PointLight or SpotLight'));
+    assert.ok(payload.instructions.includes('SILHOUETTE'));
+    assert.ok(!payload.input.includes('OrangeJUiceAI(1).fbx'));
+    return new Response(JSON.stringify({output: [
+      {type: 'message', content: [{type: 'output_text', text: JSON.stringify(plan)}]}
+    ]}), {status: 200});
+  };
+  const result = await worker.fetch(preparedRequest({
+    prompt: 'Build a reading lamp with a real warm light',
+    model: 'gpt-6-luna', gameOutline: 'Workspace direct children: 0'
+  }), env);
+  assert.equal(result.status, 200);
+  const response = await result.json();
+  assert.equal(response.plan.steps.length, 6);
+  assert.equal(response.plan.steps[5].className, 'PointLight');
+  assert.equal(response.applied, false);
+  assert.equal(response.requiresApproval, true);
+});
+
+test('Lamp reference profile does not intrude into unrelated GUI requests', async (t) => {
+  const before = globalThis.fetch;
+  t.after(() => { globalThis.fetch = before; });
+  globalThis.fetch = async (_url, options) => {
+    const payload = JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('SHOP PROFILE'));
+    assert.ok(!payload.instructions.includes('ORIGINAL BLENDER LAMP REFERENCE'));
+    return new Response(JSON.stringify({output: [
+      {type: 'message', content: [{type: 'output_text', text: JSON.stringify({
+        summary: 'Shop created',
+        steps: [{path: 'StarterGui/ShopGui', className: 'ScreenGui', properties: [], source: ''}]
+      })}]
+    ]}), {status: 200});
+  };
+  const result = await worker.fetch(preparedRequest({
+    prompt: 'Build a bright shop GUI',
+    model: 'gpt-6-luna', gameOutline: 'StarterGui direct children: 0'
+  }), env);
+  assert.equal(result.status, 200);
+});
