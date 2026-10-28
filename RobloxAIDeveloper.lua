@@ -1,4 +1,4 @@
--- Orange Juice AI v0.7: one request, Prepare, review, Apply.
+-- Orange Juice AI v0.9: reference-guided builder, Prepare, review, Apply.
 -- Safe allowlisted multi-object proposals. No automatic Studio modifications.
 -- Private beta: do NOT distribute the shared CLIENT_TOKEN to other users.
 
@@ -976,4 +976,4 @@ openButton.Click:Connect(function()
     widget.Enabled = not widget.Enabled
 end)
 
-print("Orange Juice AI v0.7 loaded — automatic context-based combined proposals; explicit Apply.")
+print("Orange Juice AI v0.9 loaded — reference-guided building; Prepare / review / Apply. Studio plugin ready.")
