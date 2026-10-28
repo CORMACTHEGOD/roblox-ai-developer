@@ -449,3 +449,242 @@ test('oversized and empty plans have clear non-destructive errors', async (t) =>
     assert.equal(result.plan,undefined);
   }
 });
+
+
+test('curated UI reference guidance is automatically selected for original shop, rebirth, admin and index requests', async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+  const examples = [
+    ['Create a stylish shop UI with working close button', 'SHOP PROFILE'],
+    ['Make a rebirth GUI', 'REBIRTH PROFILE'],
+    ['Build a working admin panel', 'ADMIN PROFILE'],
+    ['Create a collectible index screen', 'INDEX / COLLECTION PROFILE']
+  ];
+  for (const [prompt, profile] of examples) {
+    let checked = false;
+    globalThis.fetch = async (url, opts) => {
+      assert.equal(url,'https://api.openai.com/v1/responses');
+      const sent = JSON.parse(opts.body);
+      assert.ok(sent.instructions.includes('ORANGE JUICE UI DESIGN REFERENCE V1'));
+      assert.ok(sent.instructions.includes(profile), 'Missing selected profile: ' + profile);
+      assert.ok(sent.instructions.includes('ORIGINAL'));
+      checked = true;
+      return new Response(JSON.stringify({output:[{
+        type:'message',content:[{
+          type:'output_text',text:JSON.stringify({
+            summary:'Small original UI preview',
+            steps:[{path:'StarterGui/Example',className:'ScreenGui',properties:[],source:''}]
+          })
+        }]
+      }]}),{status:200});
+    };
+    const response = await worker.fetch(preparedRequest({
+      prompt, model:'gpt-6-luna', gameOutline:'StarterGui direct children: 0'
+    }),env);
+    assert.equal(response.status,200);
+    assert.equal(checked,true);
+  }
+});
+
+test('model-building references are used for Part-based modeling without importing raw files', async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+  globalThis.fetch = async (url, opts) => {
+    const sent = JSON.parse(opts.body);
+    assert.ok(sent.instructions.includes('ROBLOX MODEL REFERENCE V1'));
+    assert.ok(sent.instructions.includes('Low-Poly-Stud-Forest'));
+    assert.ok(!sent.instructions.includes('Goku-Character-Model-Free.rbxl'));
+    assert.ok(sent.instructions.includes('not generate Blender mesh geometry'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{
+        type:'output_text',text:JSON.stringify({
+          summary:'Create low-poly tree',
+          steps:[{path:'Workspace/Tree',className:'Model',properties:[],source:''}]
+        })
+      }]
+    }]}),{status:200});
+  };
+  const r = await worker.fetch(preparedRequest({
+    prompt:'Build a low-poly forest model',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+});
+
+test('gradient and shine UI proposal classes are supported by the Worker with review-only response', async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+  const plan = {
+    summary:'Layered original button shine',
+    steps:[
+      {path:'StarterGui/Shop',className:'ScreenGui',properties:[],source:''},
+      {path:'StarterGui/Shop/BuyButton',className:'TextButton',properties:[
+        {name:'Text',value:'BUY'},
+        {name:'TextStrokeTransparency',value:'0.65'}
+      ],source:''},
+      {path:'StarterGui/Shop/BuyButton/Rounded',className:'UICorner',properties:[
+        {name:'CornerRadius',value:'0,12'}
+      ],source:''},
+      {path:'StarterGui/Shop/BuyButton/Shading',className:'UIGradient',properties:[
+        {name:'Color',value:'70,255,190|8,175,148'},
+        {name:'Transparency',value:'0|0.15'},
+        {name:'Rotation',value:'65'}
+      ],source:''}
+    ]
+  };
+  globalThis.fetch = async (url, opts) => {
+    const sent = JSON.parse(opts.body);
+    assert.ok(sent.instructions.includes('UIGradient'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',text:JSON.stringify(plan)}]
+    }]}),{status:200});
+  };
+  const r = await worker.fetch(preparedRequest({
+    prompt:'Make a polished shop UI',
+    model:'gpt-6-luna',gameOutline:'StarterGui direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+  const body = await r.json();
+  assert.equal(body.applied,false);
+  assert.equal(body.plan.steps[3].className,'UIGradient');
+});
+
+
+test('user-created Blender lamp reference guides full assembly rather than assuming missing props exist', async (t) => {
+  const before = globalThis.fetch;
+  t.after(() => { globalThis.fetch = before; });
+  const plan = {
+    summary: 'New lamp built from base, stem, shade, bulb and warm light',
+    steps: [
+      {path: 'Workspace/ReadingLamp', className: 'Model', properties: [], source: ''},
+      {path: 'Workspace/ReadingLamp/Base', className: 'Part',
+        properties: [{name: 'Shape', value: 'Cylinder'}], source: ''},
+      {path: 'Workspace/ReadingLamp/Stem', className: 'Part', properties: [], source: ''},
+      {path: 'Workspace/ReadingLamp/TopShade', className: 'Part', properties: [], source: ''},
+      {path: 'Workspace/ReadingLamp/Bulb', className: 'Part',
+        properties: [{name: 'Shape', value: 'Ball'}], source: ''},
+      {path: 'Workspace/ReadingLamp/Bulb/WarmLight', className: 'PointLight',
+        properties: [{name: 'Brightness', value: '2'},
+          {name: 'Range', value: '16'}, {name: 'Color', value: '255,219,160'}], source: ''}
+    ]
+  };
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.openai.com/v1/responses');
+    const payload = JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('ORIGINAL BLENDER LAMP REFERENCE'));
+    assert.ok(payload.instructions.includes('1,147 total'));
+    assert.ok(payload.instructions.includes('PointLight or SpotLight'));
+    assert.ok(payload.instructions.includes('SILHOUETTE'));
+    assert.ok(!payload.input.includes('OrangeJUiceAI(1).fbx'));
+    return new Response(JSON.stringify({output: [
+      {type: 'message', content: [{type: 'output_text', text: JSON.stringify(plan)}]}
+    ]}), {status: 200});
+  };
+  const result = await worker.fetch(preparedRequest({
+    prompt: 'Build a reading lamp with a real warm light',
+    model: 'gpt-6-luna', gameOutline: 'Workspace direct children: 0'
+  }), env);
+  assert.equal(result.status, 200);
+  const response = await result.json();
+  assert.equal(response.plan.steps.length, 6);
+  assert.equal(response.plan.steps[5].className, 'PointLight');
+  assert.equal(response.applied, false);
+  assert.equal(response.requiresApproval, true);
+});
+
+test('Lamp reference profile does not intrude into unrelated GUI requests', async (t) => {
+  const before = globalThis.fetch;
+  t.after(() => { globalThis.fetch = before; });
+  globalThis.fetch = async (_url, options) => {
+    const payload = JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('SHOP PROFILE'));
+    assert.ok(!payload.instructions.includes('ORIGINAL BLENDER LAMP REFERENCE'));
+    const plan = {
+      summary: 'Shop created',
+      steps: [{path: 'StarterGui/ShopGui', className: 'ScreenGui', properties: [], source: ''}]
+    };
+    return new Response(JSON.stringify({output: [{
+      type: 'message', content: [{type: 'output_text', text: JSON.stringify(plan)}]
+    }]}), {status: 200});
+  };
+  const result = await worker.fetch(preparedRequest({
+    prompt: 'Build a bright shop GUI',
+    model: 'gpt-6-luna', gameOutline: 'StarterGui direct children: 0'
+  }), env);
+  assert.equal(result.status, 200);
+});
+
+
+test('horse model plans use inspected organic-rig references but never claim animation is implemented', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.openai.com/v1/responses');
+    const body = JSON.parse(options.body);
+    assert.ok(body.instructions.includes('ORGANIC MODEL REFERENCE'));
+    assert.ok(body.instructions.includes('Horse-Rig'));
+    assert.ok(body.instructions.includes('not verified animation functionality'));
+    assert.ok(!body.instructions.includes('HARD-SURFACE VEHICLE REFERENCE'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',
+        text:JSON.stringify({summary:'A simple original Part-based pony',steps:[
+          {path:'Workspace/Pony',className:'Model',properties:[],source:''},
+          {path:'Workspace/Pony/Body',className:'Part',properties:[],source:''}
+        ]})
+      }]
+    }]}),{status:200});
+  };
+  const result = await worker.fetch(preparedRequest({
+    prompt:'Build an original low-poly horse model',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  const body = await result.json();
+  assert.equal(result.status,200);
+  assert.equal(body.applied,false);
+  assert.equal(body.plan.steps.length,2);
+});
+
+test('vehicle model plans use high-poly reference as performance caution', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (_url, options) => {
+    const payload=JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('HARD-SURFACE VEHICLE REFERENCE'));
+    assert.ok(payload.instructions.includes('504 geometry objects'));
+    assert.ok(payload.instructions.includes('NOT a recommended Roblox runtime budget'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',text:JSON.stringify({
+        summary:'Original low-poly vehicle body',
+        steps:[{path:'Workspace/Car',className:'Model',properties:[],source:''}]
+      })}]
+    }]}),{status:200});
+  };
+  const r=await worker.fetch(preparedRequest({
+    prompt:'Make an original low-poly sports car',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+});
+
+test('stylized prop requests use broad silhouette guidance and do not include copied mesh bytes', async (t) => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (_url, options) => {
+    const payload=JSON.parse(options.body);
+    assert.ok(payload.instructions.includes('STYLIZED PROP REFERENCE'));
+    assert.ok(payload.instructions.includes('four separately named mesh components'));
+    assert.ok(payload.instructions.includes('not any weapon mechanics'));
+    assert.ok(!payload.instructions.includes('5020133'));
+    return new Response(JSON.stringify({output:[{
+      type:'message',content:[{type:'output_text',text:JSON.stringify({
+        summary:'Original decorative prop',
+        steps:[{path:'Workspace/DisplayProp',className:'Model',properties:[],source:''}]
+      })}]
+    }]}),{status:200});
+  };
+  const r=await worker.fetch(preparedRequest({
+    prompt:'Create a stylized decorative pirate prop',
+    model:'gpt-6-luna',gameOutline:'Workspace direct children: 0'
+  }),env);
+  assert.equal(r.status,200);
+});

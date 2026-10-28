@@ -29,6 +29,27 @@ Only approved property names/types are writable; unsupported properties or Class
 Approved Scripts/LocalScripts start **disabled** for safety. ModuleScripts do not execute until required. The user should inspect generated code and test it in Studio before enabling scripts. Thus Apply stages the functionality; code is not automatically run.
 
 
+## Developer reference knowledge v1 — automatic, no user upload steps
+
+The `/v1/prepare` Worker now automatically selects a small, **curated developer-maintained design profile** based on the requested feature:
+
+- **UI core:** layered borders and intentionally selective shadows, UICorner/UIStroke, color cohesion, reflected highlights, optional controlled stud patterns, readable text, functional controls.
+- **Shop:** big offer cards, bright buy buttons, currency context and working close behavior.
+- **Rebirth:** current-versus-next progression, resource requirements, vivid reward bars and actual server checks.
+- **Index:** category filters, genuine ownership/progress views.
+- **Admin:** visually polished but permission-aware controls with server-side checks.
+- **Models:** modular Part-based assembly, deliberate grouping and necessary scripts, based on broad structural patterns in developer-supplied Roblox places.
+
+These summaries were **manually extracted from three provided UI screenshots, three uploaded .rbxl file inventories, and one user-created original Blender lamp FBX**. The underlying images, models and scripts are **not** uploaded into the public repository. See `references/STYLE_SYSTEM_V1.md` and `references/PLACE_FILE_INVENTORY.md` for evidence and limits.
+
+Additional external-file research adds **original stylized accessory**, **organic animal**, and **performance-aware vehicle** modeling guidance. Measured structural facts from `.fbx`/`.obj` uploads are documented in `references/EXTERNAL_3D_REFERENCE_PATTERNS.md`; **raw third-party meshes, materials and animation files are not distributed** because reuse permissions are unverified. The current primitive-only builder does not promise to recreate an imported mesh, rig, car physics, or animation. VFX and further UI analysis remain deferred.
+
+The original Blender lamp reference adds **silhouette-first multi-piece prop modeling** guidance and allows a proposed **PointLight or SpotLight** inside a Part, with bounded Brightness/Range and full approval; no arbitrary imported Blender mesh geometry is reconstructed. See `references/BLENDER_LAMP_REFERENCE.md` for the verified mesh inventory and limitations.
+
+The Studio plugin additionally supports **UIGradient** (ColorSequence/NumberSequence through limited string encodings), stronger text outlines, uncluttered shine panels and Roblox stud surface properties, allowing these visual rules to generate more than plain static white UI. This does **not** automatically inspect new visual files or permanently train the underlying model. Users have no special reference setup; the developer embeds and updates the profiles in Cloudflare.
+
+Newly generated scripts are still inserted **disabled** and must be inspected/approved as before. No third-party copyrighted assets should be copied.
+
 ## Public Roblox trend and game-link research (experimental)
 
 The v0.8 research preview extends the **same Prepare/Apply experience**; it does not add extra main actions or give AI permission to make changes automatically.

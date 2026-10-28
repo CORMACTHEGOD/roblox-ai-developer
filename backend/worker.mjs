@@ -12,9 +12,9 @@ const MAX_PLAN_SOURCE_LENGTH = 20000;
 const UNIFIED_PREPARE_TIMEOUT_MS = 45000; // bigger combined builds can take longer than short suggestions
 const SUPPORTED_CLASSES = new Set([
   "Folder", "Model", "Part", "WedgePart", "SpawnLocation",
-  "ScreenGui", "Frame", "TextLabel", "TextButton", "TextBox", "ImageLabel",
+  "ScreenGui", "Frame", "TextLabel", "TextButton", "TextBox", "ImageLabel", "UIGradient",
   "UICorner", "UIStroke", "UIListLayout", "UIPadding",
-  "ProximityPrompt", "ClickDetector", "RemoteEvent", "RemoteFunction",
+  "ProximityPrompt", "ClickDetector", "PointLight", "SpotLight", "RemoteEvent", "RemoteFunction",
   "IntValue", "NumberValue", "BoolValue", "StringValue",
   "Script", "LocalScript", "ModuleScript"
 ]);
@@ -30,13 +30,13 @@ Study the current GAME OUTLINE carefully (hierarchy names, classes and selected 
 If a required object is ABSENT, propose creating it AND all dependent objects and scripts as a coordinated set. Do not assume the user pre-created something when it isn't shown in the outline. If the outline is incomplete, create a safely named item or make a runtime existence check.
 Plan ordered steps, parent BEFORE child. Every step has EXACT absolute slash-separated path, className, properties [{name,value}], and source string.
 Root must be one of Workspace, ReplicatedStorage, ServerStorage, ServerScriptService, StarterGui, StarterPack, StarterPlayer.
-Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue, Script, LocalScript, ModuleScript.
+Use only these exact ClassNames: Folder, Model, Part, WedgePart, SpawnLocation, ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, UIGradient, UICorner, UIStroke, UIListLayout, UIPadding, ProximityPrompt, ClickDetector, PointLight, SpotLight, RemoteEvent, RemoteFunction, IntValue, NumberValue, BoolValue, StringValue, Script, LocalScript, ModuleScript.
 Stay within 48 steps TOTAL. For ordinary menus, aim for 15-30 well-chosen objects rather than dozens of tiny decoration objects. If the design is too large, prioritize a self-contained, functional and polished subset; never leave dependencies dangling. For an existing object, propose its existing path with the same ClassName and only properties to change, or omit it entirely if no changes are needed.
 Scripts must have source. Prefer Script in ServerScriptService or inside a Workspace model/part, LocalScript inside StarterGui's GUI tree or StarterPlayer/StarterPlayerScripts. Never assume LocalScript runs when parented directly to Workspace.
 Avoid referencing objects or remotes that aren't in the existing outline OR created by the steps. If a RemoteEvent is needed for client/server communication and absent, PROPOSE CREATING it in ReplicatedStorage and the corresponding client and server handlers. For shared state you may create IntValue/NumberValue/BoolValue/StringValue and set Value.
 For scripts, put executable Luau only in source, with no introductory/tutorial/approval comments. Source MUST be empty for non-script objects.
 All property values are STRINGS. UDim is "scale,offset". RGB colors are "r,g,b" in 0-255 integers. Vector3 is "x,y,z". UDim2 is "scaleX,offsetX,scaleY,offsetY". Vector2 is "x,y". Use true/false for booleans and standard names for materials and fonts.
-Valid properties: Value for value objects; Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape for parts; Size, Position, AnchorPoint, BackgroundColor3, BackgroundTransparency, Text, TextColor3, TextSize, TextWrapped, Visible, ZIndex, Font for GuiObjects; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness and Color for UIStroke; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt. Only use properties actually supported by the chosen ClassName.
+Valid properties: Value for value objects; Size, Position, Orientation, Anchored, CanCollide, Transparency, Color, Material, Shape, TopSurface, BottomSurface, Reflectance, CastShadow for Parts; Size, Position, AnchorPoint, Rotation, BackgroundColor3, BackgroundTransparency, ClipsDescendants, BorderSizePixel, Visible, ZIndex for GuiObjects; Text, TextColor3, TextSize, TextWrapped, TextScaled, TextStrokeColor3, TextStrokeTransparency, Font for TextLabel, TextButton and TextBox; ResetOnSpawn and IgnoreGuiInset for ScreenGui; CornerRadius for UICorner; Thickness, Color and Transparency for UIStroke; Color, Transparency, Rotation and Offset for UIGradient; FillDirection and Padding for UIListLayout; ActionText, ObjectText, HoldDuration and MaxActivationDistance for ProximityPrompt; Brightness, Color, Enabled, Range and Shadows for PointLight and SpotLight; Angle and Face for SpotLight (Face enum Top, Bottom, Front, Back, Left or Right). Parent lights under a Part or Attachment in real Roblox Studio; this builder supports Parts. For lights, use modest brightness (0-10) and range (0-60). Only use properties actually supported by the chosen ClassName. For UIGradient Color, encode 2-4 RGB triplets as "r,g,b|r,g,b"; for UIGradient Transparency encode 2-4 numbers between 0 and 1 as "0|0.2|0.4". UIGradient Rotation is a decimal angle and Offset is "x,y". TopSurface and BottomSurface accept "Studs" or "Smooth". Make gradients subtle and intentional rather than busy.
 No unsupported textures/meshes/publishing, no deletes/reparents, no overwriting scripts, no unsafe code, no external HTTP/asset loading or external code execution.
 Provide a concise summary of the WHOLE change (ideally under 300 characters), not an essay. Avoid duplicating existing Parts and UIs. Approval happens separately in Studio, and inserted scripts start disabled.
 Example if asked "create a door that changes color when touched": propose Workspace/Door Part with Anchored true, Size, Position, Color, AND Workspace/Door/TouchHandler Script with functioning Touched event code. If Workspace/Door already appears as a Part, reuse it and only add the missing child Script.
@@ -44,6 +44,97 @@ Example "shop UI": propose StarterGui/ShopGui ScreenGui, StarterGui/ShopGui/Pane
 For all GUI requests, use an ORIGINAL polished, modern, readable Roblox aesthetic, with a cohesive nonwhite palette, hierarchy, rounded panels (UICorner), legible contrast, consistent spacing, and working actions where possible. Avoid default plain white rectangle interfaces. Treat recent Roblox public chart metadata as signals about categories and themes, NOT evidence of how in-game UIs/models/scripts look.
 When public Roblox reference research is provided, study recurring supported themes and mechanics and implement your OWN design; never reproduce another game's proprietary scripts, names, textures, or exact UI design. If source data is metadata-only, do not claim you've viewed the game's actual UI or inspected its scripts.
 If a request cannot be safely fulfilled with these classes, propose a small achievable subset and make the limitation clear in summary.`;
+
+
+/*
+ * Developer-maintained reference rules extracted from three user-supplied UI
+ * screenshots and three Roblox place-file inventories. Raw images, imported
+ * meshes and third-party script sources are intentionally NOT distributed.
+ * These are design patterns, not permanent fine-tuning or verified live trends.
+ */
+const OJ_STYLE_CORE = `
+ORANGE JUICE UI DESIGN REFERENCE V1 (curated from developer-provided screenshots):
+Create ORIGINAL, expressive Roblox simulator interfaces rather than default white/gray rectangles.
+Visual grammar: bold title ribbons/header strips; saturated yet coordinated accent colors; dark outer and lighter inner contour; deliberately raised focal cards/buttons; rounded corners with UIStroke; clear type hierarchy and readable contrast; consistent card padding and aligned grid.
+Layer edges PATTERN-WISE: darker offset Frame as shallow shadow behind key card or title, a light inner top-edge highlight, then 1-2 outline levels using appropriately placed UIStroke. Never add random thick outlines to every label.
+Use subtle diagonal/translucent reflections on important offer cards or buttons. Use UIGradient for smooth color/shading and carefully placed translucent Frame highlights instead of made-up image asset IDs.
+Stud texture is appropriate on some banners or dark backgrounds; for UI, approximate sparingly using compatible geometric decorations when available, but prioritize functionality and stay within 48 total steps.
+Add a working close button where relevant. All buttons must have purposeful behavior; don't claim that purchases, earned currency or inventory changes work without a validated server system.
+Budget the objects deliberately: complete, usable panel with 2-4 high-quality cards is preferable to 48 decorative fragments. UI hierarchy must be responsive and visually legible.
+Do not reproduce the reference images' proprietary logos, icons, exact layouts, or illustrations.`;
+
+const OJ_STYLE_SHOP = `
+SHOP PROFILE (references: blue-ribbon shop and red/purple illustrated shop):
+Use a recognizable bright shop title/header and close tile; choose one consistent palette such as dark navy + cyan + violet with vivid emerald/yellow CTAs.
+Provide currency/status bar, 2-4 distinct item offers with visual hierarchy, differentiated card colors, actual readable price labels, and action feedback.
+Featured offers can be taller or span more width than regular cards. Use highlights, controlled stroke contrast, and a visibly pressed/hover-ready CTA style. Do not fabricate developer products or gamepass IDs.`;
+
+const OJ_STYLE_REBIRTH = `
+REBIRTH PROFILE (reference: purple/black two-column rebirth screenshot):
+Use a purple textured-feel title/header, high-contrast dark panel, current-vs-next rewards, vivid colored progression/requirement bars, clear resource threshold and a prominent primary rebirth button.
+Show skip only if an actual valid product ID exists; never invent payments. Rebirth should use server-checked resources and not client-only authority.`;
+
+const OJ_STYLE_ADMIN = `
+ADMIN PROFILE (general implementation guidance; NO admin screenshot was provided):
+Use the same polished visual system, but group commands by permission and action category, reserve strong warning colors for destructive actions, require confirmation and server-side authorization, and never trust a client's assertion of admin status.`;
+
+const OJ_STYLE_INDEX = `
+INDEX / COLLECTION PROFILE (general implementation guidance; NO index screenshot was provided):
+Provide tabs or filters, consistent entry tiles, clear owned/unowned states and a truthful completion counter driven by actual game data. Borrow style grammar, not exact shop composition.`;
+
+const OJ_STYLE_MODELS = `
+ROBLOX MODEL REFERENCE V1 (derived from user-provided binary .rbxl instance inventories):
+Low-Poly-Stud-Forest: many reusable Parts and Welds suggest assembled modular geometry. School-Treasure-Collect-Coins: a mixed Part/Mesh/Script/GUI multi-system place. Character reference: MeshParts, Attachments, beams and particles show the need for grouped visuals/effects.
+These inventories do NOT verify correctness of any original scripts or prove the artistic appearance. Do not copy character likenesses or source assets.
+For a new requested object, inspect the current hierarchy; create missing models and structural primitives instead of assuming they exist, and include all required behavior scripts/proximity prompts. Use simple harmonious scale, clean grouping and consistent color/material. Current plugin can only create the listed primitive classes, not generate Blender mesh geometry.`;
+
+const OJ_STYLE_LAMP_PROPS = `
+ORIGINAL BLENDER LAMP REFERENCE (user-created FBX inspected, not copied):
+The example assembled a recognizable lamp from three mesh components (491, 174, and 482 vertices, 1,147 total): a distinct rounded base and slim/tapered stem, upper cylindrical shade, and a small spherical accent. No exported materials were detected, so select your own intentional palette.
+For ANY new lamp or similar prop, prioritize recognizable SILHOUETTE and sensible component proportions: stable base, connecting support, top shade/detail. Group missing pieces in a new Model with clear names. Arrange Parts using deliberate positions/sizes (they are NOT automatically laid out by a Model).
+Create an original approximation from Part primitives; for cylindrical supports use Part Shape=Cylinder only if the resulting orientation is correct, and for bulbs consider Part Shape=Ball. Do not claim to recreate the FBX mesh exactly.
+For a light-emitting lamp, create PointLight or SpotLight under a suitable BasePart and set a reasonable warm Color, Range and Brightness; add an interactive ProximityPrompt plus a Script only if the user requests on/off interaction. Never claim a decorative Part alone emits light. All new scripts are inserted DISABLED for review.
+This is a reusable component-assembly lesson, not a license to distribute the user's raw FBX or other creators' meshes.`;
+
+const OJ_STYLE_ANIMAL_MODELS = `
+ORGANIC MODEL REFERENCE: a low-poly horse FBX was inspected: one 1,004-vertex mesh with a separate Horse-Rig hierarchy, many named limbs and animation/bone records. This shows the distinction between a visual MESH and a movement RIG, not verified animation functionality.
+For animal/creature requests, make an ORIGINAL recognizable silhouette (body, head, ears, legs, tail), respect readable bilateral anatomy, name and group parts consistently, and distinguish decorative static animals from playable/animated characters. Do not invent mesh IDs, bones, animation asset IDs or claim to generate a skinned rig with this primitive-only plugin. Prefer an honest simple Part approximation when feasible.`;
+
+const OJ_STYLE_VEHICLES = `
+HARD-SURFACE VEHICLE REFERENCE: one detailed sports car FBX contains 504 geometry objects and about 444,749 vertices, with separate material classes (paint, glass, rubber, metal and trim). This is an illustration of SUBCOMPONENT NAMING and MATERIAL GROUPING, NOT a recommended Roblox runtime budget or a license to copy that brand/model.
+For any original car/vehicle, sketch the complete silhouette first, then build logical body, wheel, window, trim and light groups. Keep symmetrical spacing and scale. Prefer lightweight/optimized low-poly geometric construction and reuse consistent materials. The plugin does not currently import or produce real FBX mesh shapes, engines, wheel constraints, or driving physics unless supported objects and scripts are explicitly available. Do not promise a working drivable vehicle without those dependencies.`;
+
+const OJ_STYLE_STYLIZED_PROPS = `
+STYLIZED PROP REFERENCE: a low-poly pirate-themed decorative game-asset FBX uses four separately named mesh components, 877 vertices, one material and one texture reference. The transferable pattern is simplified readable silhouette, deliberate grouping, modest part count and coherent material/color separation, not any weapon mechanics or reconstruction.
+For standalone game accessories, create ORIGINAL compact forms with major body, connector and accent pieces, focus on proportions and readability, and avoid excessive microdetail. No external meshes are embedded in Orange Juice AI.`;
+
+function styleKnowledgeFor(request) {
+  const p = String(request || "").toLowerCase();
+  const profiles = [];
+  const ui = /\b(shop|store|ui|gui|interface|menu|panel|rebirth|index|inventory|upgrade|admin|settings|quest|pet|hud|currency|button|screen)\b/.test(p);
+  const models = /\b(model|build|forest|tree|house|door|chest|environment|map|3d|npc|character|prop|world|coin|school|obby|lamp|light|lighting|lantern|furniture|vending|kiosk|statue|sign|horse|animal|pet|creature|mount|vehicle|car|truck|sports car|wheel|boat|accessory|sword|low.poly|pirate)\b/.test(p);
+  if (ui) {
+    profiles.push(OJ_STYLE_CORE);
+    if (/\b(shop|store|offer|product|buy|gamepass)\b/.test(p)) profiles.push(OJ_STYLE_SHOP);
+    else if (/\b(rebirth|prestige)\b/.test(p)) profiles.push(OJ_STYLE_REBIRTH);
+    else if (/\b(admin|moderation)\b/.test(p)) profiles.push(OJ_STYLE_ADMIN);
+    else if (/\b(index|collection|catalog|catalogue|dex)\b/.test(p)) profiles.push(OJ_STYLE_INDEX);
+  }
+  if (models || !ui) profiles.push(OJ_STYLE_MODELS);
+  if (/\b(lamp|lantern|light|lighting|furniture|vending|kiosk)\b/.test(p)) {
+    profiles.push(OJ_STYLE_LAMP_PROPS);
+  }
+  if (/\b(horse|animal|creature|mount|quadruped|pony)\b/.test(p)) {
+    profiles.push(OJ_STYLE_ANIMAL_MODELS);
+  }
+  if (/\b(car|vehicle|truck|racecar|race|wheels|wheel|sports car|supercar)\b/.test(p)) {
+    profiles.push(OJ_STYLE_VEHICLES);
+  }
+  if (/\b(accessory|prop|sword|pirate|fantasy item|handheld)\b/.test(p)) {
+    profiles.push(OJ_STYLE_STYLIZED_PROPS);
+  }
+  return profiles.join("\n").slice(0, 6500);
+}
 
 const unifiedFormat = {
   type: "json_schema", name: "orange_juice_multi_object_plan", strict: true,
@@ -351,7 +442,9 @@ export default {
         },
         body: JSON.stringify({
           model,
-          instructions: unifiedMode ? unifiedInstructions : scriptMode ? scriptProposalInstructions : instructions,
+          instructions: unifiedMode
+            ? unifiedInstructions + "\n\n" + styleKnowledgeFor(prompt)
+            : scriptMode ? scriptProposalInstructions : instructions,
           input,
           ...(unifiedMode ? { reasoning: { effort: "low" } } : {}),
           ...(unifiedMode ? { text: { format: unifiedFormat } }
